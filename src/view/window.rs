@@ -4,24 +4,25 @@ use gtk::glib;
 use gtk::prelude::*;
 
 use super::dialogs;
-use crate::viewmodel::AppViewModel;
+use super::grid_view::GridView;
+use crate::viewmodel::{AppViewModel, EditorViewModel};
 
 const DEFAULT_WIDTH: i32 = 1100;
 const DEFAULT_HEIGHT: i32 = 720;
 
 /// The RingMD window: editor pane and preview pane in a resizable split (F1.R3).
 ///
-/// The panes are placeholders until the Neovim grid (M1) and the WebKit
-/// preview (M3) land.
+/// The preview pane is a placeholder until the WebKit preview (M3) lands.
 #[derive(Debug)]
 pub struct MainWindow {
     window: gtk::ApplicationWindow,
+    editor: GridView,
     vm: AppViewModel,
 }
 
 impl MainWindow {
-    pub fn new(app: &gtk::Application, vm: AppViewModel) -> Self {
-        let editor = placeholder("Editor", "Neovim engine arrives in M1");
+    pub fn new(app: &gtk::Application, vm: AppViewModel, editor_vm: &EditorViewModel) -> Self {
+        let editor = GridView::new(editor_vm);
         let preview = placeholder("Preview", "Live Markdown preview arrives in M3");
 
         let split = gtk::Paned::builder()
@@ -58,8 +59,13 @@ impl MainWindow {
             window,
             move |_, title, detail| dialogs::show_error(Some(&window), title, detail)
         ));
+        vm.connect_close_requested(glib::clone!(
+            #[weak]
+            window,
+            move |_| window.close()
+        ));
 
-        Self { window, vm }
+        Self { window, editor, vm }
     }
 
     pub fn window(&self) -> &gtk::ApplicationWindow {
@@ -72,6 +78,7 @@ impl MainWindow {
 
     pub fn present(&self) {
         self.window.present();
+        self.editor.grab_focus();
     }
 }
 

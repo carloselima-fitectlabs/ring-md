@@ -158,12 +158,13 @@ src/
   app.rs      GTK application lifecycle
   cli.rs      `ringmd [FILE]`
   logging.rs  `RINGMD_LOG` tracing setup
-  model/      document.rs · nvim/ grid.rs render.rs theme.rs pdf.rs config.rs
-  viewmodel/  app.rs · editor.rs preview.rs theme.rs export.rs
-  view/       window.rs dialogs.rs · grid_view.rs preview_view.rs
-  services/   traits (PDF, clipboard, file dialogs) + fake.rs for tests
+  model/      document.rs grid.rs clipboard.rs nvim/ · render.rs theme.rs pdf.rs config.rs
+    nvim/     session.rs (process + RPC) rpc.rs redraw.rs input.rs version.rs runtime.rs fake.rs
+  viewmodel/  app.rs editor.rs session.rs (event routing) · preview.rs theme.rs export.rs
+  view/       window.rs dialogs.rs grid_view.rs · preview_view.rs
+  services/   traits (PDF, clipboard, file dialogs) + gtk.rs (real) + fake.rs for tests
 runtime/      init.lua
-tests/        architecture.rs (layering rules) · fixtures/
+tests/        architecture.rs (layering rules) nvim_session.rs (real nvim) · fixtures/
 ```
 
 Modules after `·` are planned for later milestones. `tests/architecture.rs`
@@ -380,7 +381,7 @@ pass and it has tests where testable.
 
 Legend: **S** ≈ ½ day · **M** ≈ 1–2 days · **L** ≈ 3–5 days
 
-Progress: **M0 done** · M1–M7 not started.
+Progress: **M0, M1 done** · M2–M7 not started.
 
 ### M0 — Project foundation ✅
 
@@ -392,21 +393,21 @@ Progress: **M0 done** · M1–M7 not started.
 | T0.4 | Logging (`tracing`) and error-dialog helper | F2.R3, F2.R7 | T0.3 | S |
 | T0.5 | MVVM scaffolding: GObject ViewModel base pattern, `AppViewModel` skeleton, service traits (`PdfService`, `ClipboardService`, `FileDialogService`) with fakes for tests | A2, A4, A6 | T0.1 | M |
 
-### M1 — Neovim engine in a window *(critical path)*
+### M1 — Neovim engine in a window *(critical path)* ✅
 
 | Task | Description | Reqs | Deps | Size |
 |------|-------------|------|------|------|
 | T1.1 | **Model** `NvimSession`: spawn `nvim --embed -u <runtime>/init.lua`, async RPC on GLib main loop, version check | F2.R1–R3 | T0.3 | M |
 | T1.2 | **Model** `Grid`: decode `redraw` events into the grid (`grid_resize`, `grid_line`, `grid_clear`, `grid_scroll`, `grid_cursor_goto`, `hl_attr_define`, `default_colors_set`, `flush`) | F2.R1, F3.R3 | T1.1 | M |
-| T1.3 | **ViewModel** `EditorViewModel` (grid snapshot + damage, cursor, font properties) and **View** `GridView`: draw cells with Pango/Cairo, text attributes, wide chars, HiDPI | F3.R1, F3.R4, F3.R6 | T1.2 | L |
+| T1.3 | **ViewModel** `EditorViewModel` (grid snapshot + damage, cursor, font properties) and **View** `GridView`: draw cells with Pango layouts into GTK snapshots, text attributes, wide chars, HiDPI | F3.R1, F3.R4, F3.R6 | T1.2 | L |
 | T1.4 | Cursor rendering from `mode_info_set` / `mode_change` | F3.R2 | T1.3 | S |
 | T1.5 | **View→VM** keyboard input → `EditorViewModel::key_pressed` → `nvim_input` (keysym mapping, modifiers, IME via `GtkIMContext`) | F2.R4 | T1.1 | M |
 | T1.6 | **View→VM** mouse input → `EditorViewModel::mouse` → `nvim_input_mouse` | F2.R5 | T1.3 | S |
 | T1.7 | **View→VM** resize → `EditorViewModel::resize` → `nvim_ui_try_resize` | F2.R6 | T1.3 | S |
 | T1.8 | **Model** `Document` (path, modified flag); **AppViewModel** `title` property; Neovim exit/crash handling | F2.R7, F1.R4 | T1.1 | S |
-| T1.9 | Clipboard provider (`g:clipboard` → rpcrequest → `ClipboardService` → GTK clipboard) | F2.R8 | T1.1 | M |
+| T1.9 | Clipboard provider (`g:clipboard`: copy → rpcnotify, paste → rpcrequest → `ClipboardService` → GTK clipboard) | F2.R8 | T1.1 | M |
 | T1.10 | Font config + zoom shortcuts | F3.R5 | T1.3 | S |
-| T1.11 | Performance pass: damage-region redraws, glyph cache; verify F3-AC1 and N4 | F3.R3, N4 | T1.3 | M |
+| T1.11 | Performance pass: damage-region redraws (per-row render-node cache); verify F3-AC1 and N4 on real hardware | F3.R3, N4 | T1.3 | M |
 
 ### M2 — Bundled runtime (clean config)
 

@@ -2,10 +2,11 @@
 //!
 //! ViewModels depend on these traits, never on concrete GTK/WebKit types, so
 //! they can be unit-tested headless with the fakes in [`fake`]. Real
-//! implementations land with the milestones that need them:
-//! clipboard (T1.9), file dialogs (T6.3), PDF (T5.2).
+//! implementations live in [`gtk`] as the milestones need them: clipboard
+//! (T1.9); file dialogs (T6.3) and PDF (T5.2) follow.
 
 pub mod fake;
+pub mod gtk;
 
 use std::future::Future;
 use std::path::{Path, PathBuf};

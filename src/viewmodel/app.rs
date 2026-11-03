@@ -7,10 +7,15 @@ use gtk::glib;
 use gtk::glib::prelude::*;
 use gtk::glib::subclass::prelude::*;
 
+use rmpv::Value;
+
 use crate::model::Document;
 
 /// Name of the signal emitted by [`AppViewModel::report_error`].
 pub const SIGNAL_ERROR_RAISED: &str = "error-raised";
+
+/// Name of the signal asking the View to close the window.
+pub const SIGNAL_CLOSE_REQUESTED: &str = "close-requested";
 
 mod imp {
     use std::cell::{Cell, RefCell};
@@ -94,6 +99,7 @@ mod imp {
                     Signal::builder(SIGNAL_ERROR_RAISED)
                         .param_types([String::static_type(), String::static_type()])
                         .build(),
+                    Signal::builder(SIGNAL_CLOSE_REQUESTED).build(),
                 ]
             })
         }
@@ -141,6 +147,53 @@ impl AppViewModel {
         }
         self.notify_modified();
         self.notify_title();
+    }
+
+    /// Mirror Neovim's current buffer, reported by the bundled config as
+    /// `{name = "...", modified = bool}` (T1.8).
+    pub fn apply_buffer_state(&self, state: &Value) {
+        let Some(map) = state.as_map() else {
+            tracing::warn!(?state, "malformed buffer state");
+            return;
+        };
+        let get = |key: &str| {
+            map.iter()
+                .find(|(k, _)| k.as_str() == Some(key))
+                .map(|(_, v)| v)
+        };
+        let name = get("name").and_then(Value::as_str).unwrap_or_default();
+        let path = (!name.is_empty()).then(|| PathBuf::from(name));
+        self.set_document_path(path);
+        if let Some(modified) = get("modified").and_then(Value::as_bool) {
+            self.set_modified(modified);
+        }
+    }
+
+    /// Neovim ended (F2.R7): a clean exit (`:q`) closes the window, anything
+    /// else is reported as a crash.
+    pub fn neovim_exited(&self, code: Option<i32>) {
+        match code {
+            Some(0) => self.emit_by_name::<()>(SIGNAL_CLOSE_REQUESTED, &[]),
+            Some(code) => self.report_error(
+                "Neovim stopped unexpectedly",
+                &format!(
+                    "The editor engine exited with status {code}. Unsaved changes may be lost."
+                ),
+            ),
+            None => self.report_error(
+                "Neovim crashed",
+                "The editor engine was terminated by a signal. Unsaved changes may be lost.",
+            ),
+        }
+    }
+
+    /// Subscribe to close requests.
+    pub fn connect_close_requested<F: Fn(&Self) + 'static>(&self, f: F) -> glib::SignalHandlerId {
+        self.connect_closure(
+            SIGNAL_CLOSE_REQUESTED,
+            false,
+            glib::closure_local!(move |vm: &Self| f(vm)),
+        )
     }
 
     /// Command: show/hide the preview pane (`:Preview`, `Ctrl+P`).
@@ -244,6 +297,23 @@ mod tests {
         vm.toggle_fullscreen();
         assert!(vm.fullscreen());
         assert_eq!(*seen.borrow(), ["preview-visible", "fullscreen"]);
+    }
+
+    #[test]
+    fn buffer_state_mirrors_neovim() {
+        let vm = AppViewModel::default();
+        vm.apply_buffer_state(&Value::Map(vec![
+            ("name".into(), "/tmp/a.md".into()),
+            ("modified".into(), true.into()),
+        ]));
+        assert_eq!(vm.title(), "a.md+ — RingMD");
+        vm.apply_buffer_state(&Value::Map(vec![
+            ("name".into(), "".into()),
+            ("modified".into(), false.into()),
+        ]));
+        assert_eq!(vm.title(), "[No Name] — RingMD");
+        vm.apply_buffer_state(&Value::Nil);
+        assert_eq!(vm.title(), "[No Name] — RingMD");
     }
 
     #[test]
