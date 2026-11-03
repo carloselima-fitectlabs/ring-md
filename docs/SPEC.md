@@ -1,6 +1,6 @@
 # RingMD — Specification
 
-> Status: **Draft v0.2** · Process: Spec-Driven Development (SDD)
+> Status: **v1.0** (all open questions resolved) · Process: Spec-Driven Development (SDD)
 >
 > This document is the source of truth. Code is written to satisfy the
 > requirements and acceptance criteria below. Any change in behaviour starts
@@ -47,6 +47,11 @@ the editor, uses the **Gruvbox** palette throughout, and exports documents to a
 | D5 | Name: **RingMD**. Primary distribution: **Flatpak** |
 | D6 | Stack: Rust · GTK4 (gtk-rs) · WebKitGTK 6 · comrak · nvim-rs (or equivalent) |
 | D7 | Architecture pattern: **MVVM** (Model–View–ViewModel), see §3.2 |
+| D8 | `Ctrl+O` / `Ctrl+E` / `Ctrl+P` are GUI shortcuts in **Normal mode only**; in other modes they go to Neovim |
+| D9 | PDF body font: **serif** (Noto Serif, falling back to the system serif font) |
+| D10 | License: **MIT** |
+| D11 | Window chrome: **minimal headerbar** (file title + preview toggle button + menu with Export PDF / Theme) |
+| D12 | Preview may load **remote images** (`https://`); no other remote resources (scripts, styles, iframes, fonts) |
 
 ---
 
@@ -170,6 +175,7 @@ acceptance criteria (`AC`) that must be verifiable by a test or a manual check.
 | F1.R1 | RingMD launches as a native GTK4 window (no terminal involved). |
 | F1.R2 | `ringmd [FILE]` opens `FILE`; with no argument, an empty unnamed buffer opens. |
 | F1.R3 | Window has a single editor pane and an optional preview pane in a resizable split. |
+| F1.R7 | A minimal headerbar shows the window title, a preview toggle button and a menu (Open, Export PDF, Theme ▸ variants, About). Hidden in fullscreen. |
 | F1.R4 | Window title shows `<filename>[+] — RingMD` (`+` when modified). |
 | F1.R5 | Closing the window with unsaved changes asks to Save / Discard / Cancel. |
 | F1.R6 | Works on Wayland and X11. |
@@ -226,6 +232,7 @@ acceptance criteria (`AC`) that must be verifiable by a test or a manual check.
 | F4.R6 | Relative image paths resolve relative to the file's directory. |
 | F4.R7 | Links open in the system browser, never inside the preview. |
 | F4.R8 | Raw HTML in Markdown is sanitized (no scripts executed). |
+| F4.R10 | Remote images (`https://`) are loaded; all other remote resources (scripts, stylesheets, fonts, iframes) are blocked. |
 | F4.R9 | `:Preview` toggles the preview pane; `Ctrl+P` does the same. |
 
 **AC**
@@ -233,6 +240,7 @@ acceptance criteria (`AC`) that must be verifiable by a test or a manual check.
 - F4-AC2: Moving the cursor to a heading 300 lines down scrolls the preview to that heading.
 - F4-AC3: `<script>alert(1)</script>` in the document does not execute.
 - F4-AC4: `![](img/a.png)` displays the image next to the opened file.
+- F4-AC5: `![](https://…/x.png)` displays; `<link rel=stylesheet href="https://…">` is not loaded.
 
 ### F5 — Gruvbox theme & variants
 
@@ -254,7 +262,7 @@ acceptance criteria (`AC`) that must be verifiable by a test or a manual check.
 | ID | Requirement |
 |----|-------------|
 | F6.R1 | `:ExportPdf [path]` exports the current buffer to PDF. Default path: same directory and name as the file, with `.pdf`. Unnamed buffer → file chooser. |
-| F6.R2 | PDF style is **plain and printable**: white background, black text, no Gruvbox colors, serif-friendly body font, monospace code with light-grey background. |
+| F6.R2 | PDF style is **plain and printable**: white background, black text, no Gruvbox colors, serif body font (Noto Serif → system serif), monospace code with light-grey background. |
 | F6.R3 | Default page: A4, 20 mm margins. Page size (A4/Letter) and margins configurable. |
 | F6.R4 | Headings avoid being orphaned at page bottom; code blocks, tables and images avoid splitting where possible. |
 | F6.R5 | Links remain clickable in the PDF. |
@@ -333,10 +341,12 @@ Everything else is plain Neovim.
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | Font size up / down / reset |
 | `F11` | Fullscreen |
 
-> GUI shortcuts are intercepted only when they do not collide with Neovim
-> Normal-mode meaning that users rely on. `Ctrl+O` / `Ctrl+E` / `Ctrl+P` are
-> intercepted only in **Normal mode**; in Insert mode they go to Neovim.
-> *(Open question Q1.)*
+> `Ctrl+O` / `Ctrl+E` / `Ctrl+P` are intercepted only in **Normal mode** (D8);
+> in Insert, Visual, Command-line and other modes they are sent to Neovim.
+> In Normal mode they therefore replace Neovim's jumplist-back (`Ctrl+O`) and
+> scroll-down (`Ctrl+E`); those remain available as `:normal! <C-o>` or via
+> `<C-o>`-free alternatives (`''`, `g;`). `Ctrl+S`, `Ctrl+=/-/0` and `F11`
+> are intercepted in all modes.
 
 ---
 
@@ -346,10 +356,10 @@ Everything else is plain Neovim.
 |----|-------------|
 | N1 | Cold start to interactive editor ≤ 500 ms (excluding Flatpak first-run). |
 | N2 | Idle memory ≤ 150 MB including WebKit. |
-| N3 | No network access at runtime (preview loads no remote resources unless the document references them). |
+| N3 | No network access at runtime except remote images referenced by the document (F4.R10). |
 | N4 | Keystroke-to-screen latency in the editor ≤ 16 ms (one frame). |
 | N5 | Code is `cargo clippy -D warnings` and `cargo fmt` clean. |
-| N6 | License: to be decided (Q3). |
+| N6 | License: MIT (`LICENSE` file at repo root). |
 
 ---
 
@@ -365,7 +375,7 @@ Legend: **S** ≈ ½ day · **M** ≈ 1–2 days · **L** ≈ 3–5 days
 
 | Task | Description | Reqs | Deps | Size |
 |------|-------------|------|------|------|
-| T0.1 | Cargo project, MVVM source layout (§3.3), `rustfmt`/`clippy` config | N5, A1–A6 | — | S |
+| T0.1 | Cargo project, MVVM source layout (§3.3), `rustfmt`/`clippy` config, MIT `LICENSE` | N5, N6, A1–A6 | — | S |
 | T0.2 | GitHub Actions CI: build, test, clippy, fmt on Ubuntu with GTK4 + WebKitGTK 6 | F10.R4 | T0.1 | S |
 | T0.3 | GTK4 `Application` + empty window, CLI arg parsing (`ringmd [FILE]`) | F1.R1, F1.R2 | T0.1 | S |
 | T0.4 | Logging (`tracing`) and error-dialog helper | F2.R3, F2.R7 | T0.3 | S |
@@ -406,6 +416,7 @@ Legend: **S** ≈ ½ day · **M** ≈ 1–2 days · **L** ≈ 3–5 days
 | T3.4 | **ViewModel** `PreviewViewModel`: `nvim_buf_attach` → debounced re-render → `html` property; View patches `<article>` via JS, preserving scroll | F4.R2, F4.R3 | T1.1, T3.1, T3.3, T0.5 | M |
 | T3.5 | Base URI = file directory for relative images | F4.R6 | T3.3 | S |
 | T3.6 | Open links in system browser (navigation policy) | F4.R7 | T3.3 | S |
+| T3.9 | Resource policy: allow remote images, block other remote resources; test with fixture | F4.R10 | T3.3 | S |
 | T3.7 | Scroll sync: `CursorMoved` → `PreviewViewModel.scroll_target_line` → View scrolls to nearest `data-sourcepos` element | F4.R4 | T3.4 | M |
 | T3.8 | `AppViewModel.preview_visible` + `toggle_preview` command, bound to `:Preview` and `Ctrl+P` | F4.R9 | T2.2, T3.3 | S |
 
@@ -441,6 +452,7 @@ Legend: **S** ≈ ½ day · **M** ≈ 1–2 days · **L** ≈ 3–5 days
 | T6.5 | `autoread` + external change handling in bundled config | F7.R3 | T2.1 | S |
 | T6.6 | Mode-aware shortcut decisions in `EditorViewModel` (§5, rule A3) | §5 | T1.5 | S |
 | T6.7 | Fullscreen (`F11`) | §5 | T0.3 | S |
+| T6.8 | **View** minimal headerbar bound to `AppViewModel` (title, preview toggle, menu) | F1.R7 | T0.5, T3.8 | S |
 
 ### M7 — Packaging & release
 
@@ -477,15 +489,15 @@ Fixture documents live in `tests/fixtures/` and cover every GFM feature in F4.R1
 
 ---
 
-## 9. Open questions
+## 9. Resolved questions
 
-| ID | Question | Default if unanswered |
-|----|----------|-----------------------|
-| Q1 | Should `Ctrl+O`/`Ctrl+E`/`Ctrl+P` be intercepted only in Normal mode, or use different keys entirely to never shadow Vim? | Normal mode only |
-| Q2 | PDF body font: serif (e.g. *Noto Serif*) or sans (*Noto Sans*)? | Serif |
-| Q3 | License? | MIT |
-| Q4 | Show a minimal headerbar (title + preview toggle button), or no chrome at all? | Minimal headerbar |
-| Q5 | Should the preview be allowed to load remote images (`https://…`)? | Yes, images only |
+| ID | Question | Answer |
+|----|----------|--------|
+| Q1 | Scope of `Ctrl+O`/`Ctrl+E`/`Ctrl+P` | Normal mode only → D8 |
+| Q2 | PDF body font | Serif → D9 |
+| Q3 | License | MIT → D10 |
+| Q4 | Window chrome | Minimal headerbar → D11 |
+| Q5 | Remote images in preview | Yes, images only → D12 |
 
 ---
 
