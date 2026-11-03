@@ -66,3 +66,19 @@ jobs:
             fi
             kill "$pid"
           '
+
+  docker:
+    name: docker image
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build runtime image
+        run: docker build --target runtime -t ringmd:ci .
+
+      - name: Image contains the app and Neovim
+        run: |
+          docker run --rm --entrypoint sh ringmd:ci -c \
+            'test -x /usr/local/bin/ringmd \
+             && test -f /usr/local/share/ringmd/runtime/init.lua \
+             && nvim --version | head -1'

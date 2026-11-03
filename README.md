@@ -45,6 +45,39 @@ with platform access behind traits in `services`. ViewModels depend on `glib`
 only and are tested without a display; `tests/architecture.rs` enforces the
 layering.
 
+## Docker
+
+The `Dockerfile` has a `dev` stage (Rust, GTK 4 headers, Neovim, Xvfb) and a
+slim `runtime` stage with just the app. `docker-compose.yml` wraps both:
+
+```bash
+docker compose run --rm check
+```
+
+runs `cargo fmt --check`, clippy and all tests, like CI. For a shell with
+the toolchain:
+
+```bash
+docker compose run --rm dev
+```
+
+To run the editor itself on your X11 display (XWayland works too), allow
+local containers on your X server once per session, then start it with a
+file from the current directory:
+
+```bash
+xhost +si:localuser:$(id -un)
+```
+
+```bash
+docker compose run --rm app notes.md
+```
+
+Set `RINGMD_DOCS=/path/to/notes` to open files from another folder, and
+`RINGMD_UID`/`RINGMD_GID` if your user is not uid/gid 1000. Your
+`~/.config/ringmd/init.lua` and Neovim's state persist in the
+`ringmd-home` volume.
+
 ## License
 
 [MIT](LICENSE)
