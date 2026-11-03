@@ -3,20 +3,64 @@
 
 #![allow(clippy::unwrap_used)]
 
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use gtk::glib;
 use ringmd::model::Grid;
 use ringmd::model::nvim::redraw;
-use ringmd::model::nvim::{NvimApi, NvimEvent, NvimSession, SpawnOptions, runtime};
+use ringmd::model::nvim::{GuiCommand, NvimApi, NvimEvent, NvimSession, SpawnOptions, runtime};
+use ringmd::model::theme::Variant;
 use rmpv::Value;
 
 const TIMEOUT: Duration = Duration::from_secs(10);
+
+/// A private home for one test: Neovim's `XDG_*` directories point inside
+/// it, so tests never read or write the real user's files.
+struct Home(PathBuf);
+
+impl Home {
+    fn new(test: &str) -> Self {
+        let dir = std::env::temp_dir().join(format!("ringmd-test-{}-{test}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        Self(dir)
+    }
+
+    fn path(&self, relative: &str) -> PathBuf {
+        self.0.join(relative)
+    }
+
+    /// Write `contents` to `relative`, creating parent directories.
+    fn write(&self, relative: &str, contents: &str) -> PathBuf {
+        let path = self.path(relative);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, contents).unwrap();
+        path
+    }
+
+    fn xdg_env(&self) -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
+        ["CONFIG", "DATA", "STATE", "CACHE"]
+            .into_iter()
+            .map(|kind| {
+                let dir = self.path(&kind.to_lowercase());
+                (format!("XDG_{kind}_HOME").into(), dir.into())
+            })
+            .collect()
+    }
+}
+
+impl Drop for Home {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
 
 /// A Neovim session plus the grid built from its redraws. Waiting helpers
 /// fail with the screen contents and recent events, so a timeout in CI
 /// shows what Neovim was doing.
 struct Harness {
+    _home: Home,
     nvim: NvimSession,
     events: async_channel::Receiver<NvimEvent>,
     grid: Grid,
@@ -24,11 +68,17 @@ struct Harness {
 }
 
 impl Harness {
-    fn start(file: Option<&std::path::Path>) -> Self {
+    fn start(test: &str) -> Self {
+        Self::start_in(Home::new(test), None)
+    }
+
+    fn start_in(home: Home, file: Option<&Path>) -> Self {
         let mut options = SpawnOptions::new(runtime::init_lua());
         options.file = file.map(Into::into);
+        options.env = home.xdg_env();
         let (nvim, events) = NvimSession::spawn(&options).unwrap();
         Self {
+            _home: home,
             nvim,
             events,
             grid: Grid::new(0, 0),
@@ -38,6 +88,34 @@ impl Harness {
 
     async fn attach(&mut self) {
         self.nvim.ui_attach(40, 6).await.unwrap();
+    }
+
+    /// Attach and wait for `VimEnter` (reported as buffer state), so
+    /// startup, including plugin loading, has finished.
+    async fn attach_ready(&mut self) {
+        self.attach().await;
+        self.wait_for("VimEnter", |event, _| {
+            notification(event, "ringmd_buffer").map(|_| ())
+        })
+        .await;
+    }
+
+    async fn eval(&self, expr: &str) -> Value {
+        self.nvim
+            .request("nvim_eval", vec![expr.into()])
+            .await
+            .unwrap()
+    }
+
+    /// Wait for the next GUI command sent by the bundled config.
+    async fn next_command(&mut self, what: &str) -> GuiCommand {
+        self.wait_for(what, |event, _| match event {
+            NvimEvent::Notification { method, params } => {
+                GuiCommand::from_notification(method, params)
+            }
+            _ => None,
+        })
+        .await
     }
 
     /// Process events until `check` returns `Some`. Redraws are applied to
@@ -123,7 +201,7 @@ fn notification<'a>(event: &'a NvimEvent, name: &str) -> Option<&'a [Value]> {
 
 #[test]
 fn typing_shows_up_in_the_grid() {
-    let mut h = Harness::start(None);
+    let mut h = Harness::start("typing_shows_up_in_the_grid");
     block_on(async {
         h.attach().await;
         h.nvim.input("ihello <lt>world><Esc>");
@@ -139,7 +217,7 @@ fn typing_shows_up_in_the_grid() {
 
 #[test]
 fn bundled_config_is_loaded() {
-    let mut h = Harness::start(None);
+    let mut h = Harness::start("bundled_config_is_loaded");
     block_on(async {
         h.attach().await;
         let myvimrc = h
@@ -154,7 +232,7 @@ fn bundled_config_is_loaded() {
 
 #[test]
 fn resize_changes_the_grid() {
-    let mut h = Harness::start(None);
+    let mut h = Harness::start("resize_changes_the_grid");
     block_on(async {
         h.attach().await;
         h.nvim.ui_try_resize(30, 10);
@@ -165,7 +243,7 @@ fn resize_changes_the_grid() {
 
 #[test]
 fn clipboard_goes_through_the_gui() {
-    let mut h = Harness::start(None);
+    let mut h = Harness::start("clipboard_goes_through_the_gui");
     block_on(async {
         h.attach().await;
         h.nvim.input("ione<Esc>\"+yy");
@@ -200,12 +278,9 @@ fn clipboard_goes_through_the_gui() {
 
 #[test]
 fn buffer_state_is_reported() {
-    let dir = std::env::temp_dir().join(format!("ringmd-test-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let file = dir.join("notes.md");
-    std::fs::write(&file, "# Notes\n").unwrap();
-
-    let mut h = Harness::start(Some(&file));
+    let home = Home::new("buffer_state_is_reported");
+    let file = home.write("notes.md", "# Notes\n");
+    let mut h = Harness::start_in(home, Some(&file));
     block_on(async {
         h.attach().await;
         h.nvim.input("x");
@@ -223,12 +298,11 @@ fn buffer_state_is_reported() {
         })
         .await;
     });
-    std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
 fn quitting_reports_exit() {
-    let mut h = Harness::start(None);
+    let mut h = Harness::start("quitting_reports_exit");
     block_on(async {
         h.attach().await;
         h.nvim.input(":qa!<CR>");
@@ -239,5 +313,180 @@ fn quitting_reports_exit() {
             })
             .await;
         assert_eq!(code, Some(0));
+    });
+}
+
+#[test]
+fn user_neovim_config_and_plugins_are_ignored() {
+    let home = Home::new("user_neovim_config_and_plugins_are_ignored");
+    home.write("config/nvim/init.lua", "vim.g.leak_init = 1");
+    home.write("config/nvim/plugin/leak.lua", "vim.g.leak_plugin = 1");
+    home.write(
+        "data/nvim/site/pack/p/start/leak/plugin/leak.lua",
+        "vim.g.leak_pack = 1",
+    );
+    home.write(
+        "config/ringmd/plugin/leak.lua",
+        "vim.g.leak_ringmd_plugin = 1",
+    );
+    home.write(
+        "data/ringmd/site/pack/p/start/leak/plugin/leak.lua",
+        "vim.g.leak_ringmd_pack = 1",
+    );
+    let state = home.path("state/ringmd");
+    let mut h = Harness::start_in(home, None);
+    block_on(async {
+        h.attach_ready().await;
+        for name in [
+            "leak_init",
+            "leak_plugin",
+            "leak_pack",
+            "leak_ringmd_plugin",
+            "leak_ringmd_pack",
+        ] {
+            assert_eq!(
+                h.eval(&format!("exists('g:{name}')")).await,
+                0.into(),
+                "{name}"
+            );
+        }
+        // Shada, swap and undo live under RingMD's own state directory.
+        assert_eq!(h.eval("stdpath('state')").await.as_str(), state.to_str(),);
+        // Neovim's own runtime plugins still load.
+        assert_eq!(h.eval("exists('g:loaded_matchparen')").await, 1.into());
+    });
+}
+
+#[test]
+fn ringmd_user_init_is_sourced_last() {
+    let home = Home::new("ringmd_user_init_is_sourced_last");
+    // Sees the bundled shiftwidth=2, then overrides it.
+    home.write(
+        "config/ringmd/init.lua",
+        "vim.g.seen_shiftwidth = vim.o.shiftwidth\nvim.o.shiftwidth = 8",
+    );
+    let mut h = Harness::start_in(home, None);
+    block_on(async {
+        h.attach_ready().await;
+        assert_eq!(h.eval("g:seen_shiftwidth").await, 2.into());
+        assert_eq!(h.eval("&shiftwidth").await, 8.into());
+        assert_eq!(h.eval("exists(':Preview')").await, 2.into());
+    });
+}
+
+#[test]
+fn markdown_defaults_apply() {
+    let home = Home::new("markdown_defaults_apply");
+    let file = home.write("notes.md", "# Notes\n\n- item\n");
+    let mut h = Harness::start_in(home, Some(&file));
+    block_on(async {
+        h.attach_ready().await;
+        let options = "[&wrap, &linebreak, &spell, &conceallevel, &expandtab, \
+                       &shiftwidth, &number, &termguicolors, &filetype]";
+        let expected = Value::Array(vec![
+            1.into(),
+            1.into(),
+            0.into(),
+            0.into(),
+            1.into(),
+            2.into(),
+            0.into(),
+            1.into(),
+            "markdown".into(),
+        ]);
+        assert_eq!(h.eval(options).await, expected);
+        // Neovim 0.10+ ships the markdown parser, so Treesitter is active.
+        let treesitter =
+            "luaeval('vim.treesitter.highlighter.active[vim.api.nvim_get_current_buf()] ~= nil')";
+        assert_eq!(h.eval(treesitter).await, true.into());
+    });
+}
+
+#[test]
+fn unnamed_buffers_are_markdown() {
+    let mut h = Harness::start("unnamed_buffers_are_markdown");
+    block_on(async {
+        h.attach_ready().await;
+        assert_eq!(h.eval("&filetype").await, "markdown".into());
+        // Change the first buffer so `:enew` really creates a second one.
+        let set_lines = vec![
+            0.into(),
+            0.into(),
+            (-1).into(),
+            false.into(),
+            Value::Array(vec!["# one".into()]),
+        ];
+        h.nvim
+            .request("nvim_buf_set_lines", set_lines)
+            .await
+            .unwrap();
+        h.nvim
+            .request("nvim_command", vec!["enew".into()])
+            .await
+            .unwrap();
+        assert_eq!(
+            h.eval("[bufnr(), &filetype]").await,
+            Value::Array(vec![2.into(), "markdown".into()])
+        );
+    });
+}
+
+#[test]
+fn commands_complete() {
+    let mut h = Harness::start("commands_complete");
+    block_on(async {
+        h.attach_ready().await;
+        for command in ["Preview", "ExportPdf", "Theme"] {
+            assert_eq!(
+                h.eval(&format!("exists(':{command}')")).await,
+                2.into(),
+                "{command}"
+            );
+        }
+        let all: Vec<Value> = Variant::ALL.iter().map(|v| v.name().into()).collect();
+        assert_eq!(
+            h.eval("getcompletion('Theme ', 'cmdline')").await,
+            Value::Array(all)
+        );
+        assert_eq!(
+            h.eval("getcompletion('Theme light-s', 'cmdline')").await,
+            Value::Array(vec!["light-soft".into()])
+        );
+    });
+}
+
+#[test]
+fn commands_reach_the_gui() {
+    let home = Home::new("commands_reach_the_gui");
+    let dir = home.path("");
+    let mut h = Harness::start_in(home, None);
+    block_on(async {
+        h.attach_ready().await;
+        h.nvim.input(":Preview<CR>");
+        assert_eq!(h.next_command(":Preview").await, GuiCommand::TogglePreview);
+
+        // An unknown variant is rejected in Neovim and never reaches the GUI.
+        h.nvim.input(":Theme bogus<CR><CR>:Theme light-soft<CR>");
+        assert_eq!(
+            h.next_command(":Theme").await,
+            GuiCommand::SetTheme(Variant::LightSoft)
+        );
+
+        h.nvim.input(":ExportPdf<CR>");
+        assert_eq!(
+            h.next_command(":ExportPdf").await,
+            GuiCommand::ExportPdf { path: None }
+        );
+
+        // Relative paths are resolved against Neovim's working directory.
+        let cd = format!(":cd {}<CR>:ExportPdf out.pdf<CR>", dir.display());
+        h.nvim.input(&cd);
+        let expected = std::fs::canonicalize(&dir).unwrap().join("out.pdf");
+        assert_eq!(
+            h.next_command(":ExportPdf out.pdf").await,
+            GuiCommand::ExportPdf {
+                path: Some(expected)
+            }
+        );
     });
 }
