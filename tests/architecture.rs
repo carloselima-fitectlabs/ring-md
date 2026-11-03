@@ -25,14 +25,21 @@ fn rust_files(dir: &Path) -> Vec<PathBuf> {
 
 /// Returns `file:line: text` for every line in `layer` matching a forbidden pattern.
 fn violations(layer: &str, forbidden: &[&str]) -> Vec<String> {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src").join(layer);
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join(layer);
     let mut found = Vec::new();
     for file in rust_files(&dir) {
         let source = fs::read_to_string(&file).unwrap();
         for (number, line) in source.lines().enumerate() {
             let code = line.split("//").next().unwrap_or_default();
             if forbidden.iter().any(|pattern| code.contains(pattern)) {
-                found.push(format!("{}:{}: {}", file.display(), number + 1, line.trim()));
+                found.push(format!(
+                    "{}:{}: {}",
+                    file.display(),
+                    number + 1,
+                    line.trim()
+                ));
             }
         }
     }
@@ -58,7 +65,11 @@ fn model_has_no_gtk_or_upward_dependencies() {
     let mut forbidden = GTK_UI.to_vec();
     forbidden.extend(["crate::view", "crate::viewmodel"]);
     let found = violations("model", &forbidden);
-    assert!(found.is_empty(), "Model layer violations:\n{}", found.join("\n"));
+    assert!(
+        found.is_empty(),
+        "Model layer violations:\n{}",
+        found.join("\n")
+    );
 }
 
 #[test]
@@ -66,11 +77,19 @@ fn viewmodels_use_glib_only() {
     let mut forbidden = GTK_UI.to_vec();
     forbidden.push("crate::view::");
     let found = violations("viewmodel", &forbidden);
-    assert!(found.is_empty(), "ViewModel layer violations:\n{}", found.join("\n"));
+    assert!(
+        found.is_empty(),
+        "ViewModel layer violations:\n{}",
+        found.join("\n")
+    );
 }
 
 #[test]
 fn services_do_not_depend_on_view_layers() {
     let found = violations("services", &["crate::view", "crate::viewmodel"]);
-    assert!(found.is_empty(), "Service layer violations:\n{}", found.join("\n"));
+    assert!(
+        found.is_empty(),
+        "Service layer violations:\n{}",
+        found.join("\n")
+    );
 }
