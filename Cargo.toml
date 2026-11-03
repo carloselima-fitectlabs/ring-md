@@ -1,0 +1,32 @@
+[package]
+name = "ringmd"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+description = "A graphical, Linux-first Markdown editor powered by an embedded Neovim engine"
+license = "MIT"
+repository = "https://github.com/carloselima-fitectlabs/ring-md"
+readme = "README.md"
+publish = false
+
+[dependencies]
+clap = { version = "4.6", features = ["derive"] }
+gtk = { version = "0.11", package = "gtk4", features = ["gnome_46"] }
+thiserror = "2.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
