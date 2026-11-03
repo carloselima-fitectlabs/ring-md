@@ -164,6 +164,8 @@ src/
   view/       window.rs dialogs.rs grid_view.rs preview_view.rs
   services/   traits (PDF, clipboard, file dialogs, links, settings) + gtk.rs webkit.rs (real) + fake.rs for tests
 runtime/      init.lua
+data/         desktop entry, metainfo, icons, install.sh
+flatpak/      Flatpak manifest
 tests/        architecture.rs (layering rules) nvim_session.rs (real nvim) pdf_export.rs (golden PDF) fixtures/
 ```
 
@@ -381,7 +383,7 @@ pass and it has tests where testable.
 
 Legend: **S** ≈ ½ day · **M** ≈ 1–2 days · **L** ≈ 3–5 days
 
-Progress: **M0–M6 done** · M7 not started. Known gap: F6.R5 (see M5).
+Progress: **M0–M6 done**, M7 T7.1–T7.4 done · T7.5 (manual QA on real desktops) open. Known gap: F6.R5 (see M5).
 
 ### M0 — Project foundation ✅
 
@@ -470,7 +472,9 @@ Progress: **M0–M6 done** · M7 not started. Known gap: F6.R5 (see M5).
 | T6.7 | Fullscreen (`F11`) | §5 | T0.3 | S |
 | T6.8 | **View** minimal headerbar bound to `AppViewModel` (title, preview toggle, menu) | F1.R7 | T0.5, T3.8 | S |
 
-### M7 — Packaging & release
+### M7 — Packaging & release (T7.1–T7.4 ✅, T7.5 open)
+
+> Files: `data/` (desktop entry, metainfo, icons, `install.sh`), `flatpak/io.github.ringmd.RingMD.yml` (GNOME 49 runtime, Neovim 0.10.4 release build with its Markdown parsers). The app ID `io.github.ringmd.RingMD` is still provisional, and the Flatpak build fetches crates over the network, so a Flathub submission needs generated cargo sources first.
 
 | Task | Description | Reqs | Deps | Size |
 |------|-------------|------|------|------|

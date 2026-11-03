@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.ringmd.RingMD</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>RingMD</name>
+  <summary>Edit Markdown with Neovim and a live preview</summary>
+  <description>
+    <p>
+      RingMD is a graphical Markdown editor built around a real, embedded
+      Neovim. Your keystrokes go to Neovim, and a live preview follows
+      along as you type.
+    </p>
+    <ul>
+      <li>Real Neovim editing with a clean built-in configuration</li>
+      <li>Live preview with GitHub-flavoured Markdown, highlighted code and scroll sync</li>
+      <li>Gruvbox themes in six variants, or following the desktop</li>
+      <li>Plain, printable PDF export without external tools</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.ringmd.RingMD.desktop</launchable>
+  <url type="homepage">https://github.com/carloselima-fitectlabs/ring-md</url>
+  <url type="bugtracker">https://github.com/carloselima-fitectlabs/ring-md/issues</url>
+  <developer id="io.github.ringmd">
+    <name>RingMD contributors</name>
+  </developer>
+  <provides>
+    <binary>ringmd</binary>
+    <mediatype>text/markdown</mediatype>
+  </provides>
+  <categories>
+    <category>Utility</category>
+    <category>TextEditor</category>
+  </categories>
+  <keywords>
+    <keyword>markdown</keyword>
+    <keyword>neovim</keyword>
+    <keyword>editor</keyword>
+  </keywords>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-11-03">
+      <description>
+        <p>First preview release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

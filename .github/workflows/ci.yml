@@ -83,3 +83,24 @@ jobs:
             'test -x /usr/local/bin/ringmd \
              && test -f /usr/local/share/ringmd/runtime/init.lua \
              && nvim --version | head -1'
+
+  flatpak:
+    name: flatpak bundle
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-49
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate desktop file and metainfo
+        run: |
+          desktop-file-validate data/io.github.ringmd.RingMD.desktop
+          appstreamcli validate --no-net data/io.github.ringmd.RingMD.metainfo.xml
+
+      - name: Build the Flatpak bundle
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: ringmd.flatpak
+          manifest-path: flatpak/io.github.ringmd.RingMD.yml
+          cache-key: flatpak-builder-${{ hashFiles('flatpak/*.yml', 'Cargo.lock') }}

@@ -47,6 +47,8 @@ pub fn run(cli: Cli) -> glib::ExitCode {
     let document = cli.file.map(Document::with_path).unwrap_or_default();
     app.connect_activate(move |app| {
         tracing::debug!(?document, "activating");
+        // Icon from the installed theme (data/icons), also under X11.
+        gtk::Window::set_default_icon_name(APP_ID);
         let Some(display) = gdk::Display::default() else {
             tracing::error!("no display available");
             return;

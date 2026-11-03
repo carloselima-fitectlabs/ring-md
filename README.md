@@ -91,6 +91,30 @@ with platform access behind traits in `services`. ViewModels depend on `glib`
 only and are tested without a display; `tests/architecture.rs` enforces the
 layering.
 
+## Installing
+
+From source (Neovim 0.10+ must be on `PATH`):
+
+```bash
+cargo build --release
+```
+
+```bash
+./data/install.sh ~/.local
+```
+
+This installs `ringmd`, its Neovim runtime, the desktop entry (so “Open
+with RingMD” appears for `.md` files) and the icon under the prefix.
+
+As a Flatpak, which bundles Neovim and the Markdown parsers:
+
+```bash
+flatpak-builder --user --install --install-deps-from=flathub --force-clean build flatpak/io.github.ringmd.RingMD.yml
+```
+
+CI also builds `ringmd.flatpak` as an artifact on every push; install it
+with `flatpak install --user ringmd.flatpak`.
+
 ## Docker
 
 The `Dockerfile` has a `dev` stage (Rust, GTK 4 headers, Neovim, Xvfb) and a
