@@ -7,6 +7,7 @@
 //! notifications/requests arrive on the event channel.
 
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::io::{BufReader, BufWriter, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
@@ -31,7 +32,15 @@ pub struct SpawnOptions {
     pub init: PathBuf,
     /// File to open, if any.
     pub file: Option<PathBuf>,
+    /// Extra environment variables for the child (tests point the `XDG_*`
+    /// directories somewhere private).
+    pub env: Vec<(OsString, OsString)>,
 }
+
+/// `NVIM_APPNAME` given to the child: Neovim then keeps its state, shada,
+/// swap and undo files under `ringmd` instead of `nvim`, and reads
+/// `~/.config/ringmd` instead of the user's Neovim config (F2.R2).
+pub const APP_NAME: &str = "ringmd";
 
 impl SpawnOptions {
     pub fn new(init: impl Into<PathBuf>) -> Self {
@@ -39,6 +48,7 @@ impl SpawnOptions {
             program: "nvim".into(),
             init: init.into(),
             file: None,
+            env: Vec::new(),
         }
     }
 
@@ -49,6 +59,8 @@ impl SpawnOptions {
             command.arg("--").arg(file);
         }
         command
+            .env("NVIM_APPNAME", APP_NAME)
+            .envs(self.env.iter().map(|(k, v)| (k, v)))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());
@@ -245,5 +257,25 @@ fn read_loop(stdout: ChildStdout, pending: &Pending, events: &async_channel::Sen
         if events.send_blocking(event).is_err() {
             return;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_isolates_user_config() {
+        let mut options = SpawnOptions::new("/rt/init.lua");
+        options.file = Some("notes.md".into());
+        options
+            .env
+            .push(("XDG_STATE_HOME".into(), "/tmp/state".into()));
+        let command = options.command();
+        let args: Vec<_> = command.get_args().collect();
+        assert_eq!(args, ["--embed", "-u", "/rt/init.lua", "--", "notes.md"]);
+        let envs: Vec<_> = command.get_envs().collect();
+        assert!(envs.contains(&("NVIM_APPNAME".as_ref(), Some("ringmd".as_ref()))));
+        assert!(envs.contains(&("XDG_STATE_HOME".as_ref(), Some("/tmp/state".as_ref()))));
     }
 }

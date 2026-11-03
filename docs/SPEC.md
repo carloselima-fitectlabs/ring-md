@@ -158,8 +158,8 @@ src/
   app.rs      GTK application lifecycle
   cli.rs      `ringmd [FILE]`
   logging.rs  `RINGMD_LOG` tracing setup
-  model/      document.rs grid.rs clipboard.rs nvim/ · render.rs theme.rs pdf.rs config.rs
-    nvim/     session.rs (process + RPC) rpc.rs redraw.rs input.rs version.rs runtime.rs fake.rs
+  model/      document.rs grid.rs clipboard.rs theme.rs nvim/ · render.rs pdf.rs config.rs
+    nvim/     session.rs (process + RPC) rpc.rs redraw.rs input.rs command.rs version.rs runtime.rs fake.rs
   viewmodel/  app.rs editor.rs session.rs (event routing) · preview.rs theme.rs export.rs
   view/       window.rs dialogs.rs grid_view.rs · preview_view.rs
   services/   traits (PDF, clipboard, file dialogs) + gtk.rs (real) + fake.rs for tests
@@ -381,7 +381,7 @@ pass and it has tests where testable.
 
 Legend: **S** ≈ ½ day · **M** ≈ 1–2 days · **L** ≈ 3–5 days
 
-Progress: **M0, M1 done** · M2–M7 not started.
+Progress: **M0, M1, M2 done** · M3–M7 not started.
 
 ### M0 — Project foundation ✅
 
@@ -409,11 +409,11 @@ Progress: **M0, M1 done** · M2–M7 not started.
 | T1.10 | Font config + zoom shortcuts | F3.R5 | T1.3 | S |
 | T1.11 | Performance pass: damage-region redraws (per-row render-node cache); verify F3-AC1 and N4 on real hardware | F3.R3, N4 | T1.3 | M |
 
-### M2 — Bundled runtime (clean config)
+### M2 — Bundled runtime (clean config) ✅
 
 | Task | Description | Reqs | Deps | Size |
 |------|-------------|------|------|------|
-| T2.1 | `runtime/init.lua` with Markdown defaults; ensure user config/plugins/shada are isolated (`XDG_*` overrides for the child process) | F2.R2, F8.R1 | T1.1 | S |
+| T2.1 | `runtime/init.lua` with Markdown defaults; ensure user config/plugins/shada are isolated (`NVIM_APPNAME=ringmd` for the child process; user/system dirs dropped from `runtimepath`/`packpath`) | F2.R2, F8.R1 | T1.1 | S |
 | T2.2 | User commands `:Preview`, `:ExportPdf`, `:Theme` → `rpcnotify` to GUI, with completion | F8.R2 | T2.1 | S |
 | T2.3 | Treesitter Markdown highlighting when parser available | F8.R3 | T2.1 | S |
 | T2.4 | Optional `~/.config/ringmd/init.lua` sourced after bundled config | F8.R4 | T2.1 | S |

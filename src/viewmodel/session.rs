@@ -6,7 +6,7 @@ use gtk::glib;
 use rmpv::Value;
 
 use super::{AppViewModel, EditorServices, EditorViewModel};
-use crate::model::nvim::{NvimApi, NvimEvent, NvimSession, SpawnOptions};
+use crate::model::nvim::{GuiCommand, NvimApi, NvimEvent, NvimSession, SpawnOptions};
 use crate::services::ClipboardService;
 
 /// Start Neovim and wire it to `app` and the returned editor. On failure
@@ -53,13 +53,21 @@ pub fn dispatch(
     event: NvimEvent,
 ) {
     match event {
-        NvimEvent::Notification { method, params } => match method.as_str() {
-            "redraw" => editor.handle_redraw(&params),
-            "ringmd_buffer" => app.apply_buffer_state(params.first().unwrap_or(&Value::Nil)),
-            "ringmd_clipboard_set" => editor.clipboard_set(&params),
-            "nvim_error_event" => tracing::warn!(?params, "neovim reported an error"),
-            other => tracing::debug!(method = other, "unhandled notification"),
-        },
+        NvimEvent::Notification { method, params } => {
+            if let Some(command) = GuiCommand::from_notification(&method, &params) {
+                run_command(app, nvim, command);
+                return;
+            }
+            match method.as_str() {
+                "redraw" => editor.handle_redraw(&params),
+                "ringmd_buffer" => {
+                    app.apply_buffer_state(params.first().unwrap_or(&Value::Nil));
+                }
+                "ringmd_clipboard_set" => editor.clipboard_set(&params),
+                "nvim_error_event" => tracing::warn!(?params, "neovim reported an error"),
+                other => tracing::debug!(method = other, "unhandled notification"),
+            }
+        }
         NvimEvent::Request { id, method, .. } => match method.as_str() {
             "ringmd_clipboard_get" => {
                 let editor = editor.clone();
@@ -72,6 +80,29 @@ pub fn dispatch(
         },
         NvimEvent::Exited { code } => app.neovim_exited(code),
     }
+}
+
+/// Route a `:Preview` / `:ExportPdf` / `:Theme` command to the same
+/// ViewModel command a GUI shortcut uses (rule A5).
+fn run_command(app: &AppViewModel, nvim: &dyn NvimApi, command: GuiCommand) {
+    tracing::debug!(?command, "command from neovim");
+    match command {
+        GuiCommand::TogglePreview => app.toggle_preview(),
+        // Themes (M4) and PDF export (M5) are not built yet; say so where
+        // the user typed the command.
+        GuiCommand::SetTheme(_) => echo_warning(nvim, "RingMD: themes are not available yet"),
+        GuiCommand::ExportPdf { .. } => {
+            echo_warning(nvim, "RingMD: PDF export is not available yet");
+        }
+    }
+}
+
+fn echo_warning(nvim: &dyn NvimApi, text: &str) {
+    let chunk = Value::Array(vec![text.into(), "WarningMsg".into()]);
+    nvim.notify(
+        "nvim_echo",
+        vec![Value::Array(vec![chunk]), true.into(), Value::Map(vec![])],
+    );
 }
 
 /// Stand-in used when Neovim failed to start: drops every call.
@@ -132,6 +163,36 @@ mod tests {
             notification("ringmd_buffer", vec![state]),
         );
         assert_eq!(app.title(), "notes.md+ — RingMD");
+    }
+
+    #[test]
+    fn preview_command_toggles_preview() {
+        let (app, editor, nvim) = setup();
+        assert!(app.preview_visible());
+        dispatch(
+            &app,
+            &editor,
+            nvim.as_ref(),
+            notification("ringmd_preview", vec![]),
+        );
+        assert!(!app.preview_visible());
+        assert!(nvim.take_calls().is_empty());
+    }
+
+    #[test]
+    fn unbuilt_commands_warn_in_neovim() {
+        let (app, editor, nvim) = setup();
+        dispatch(
+            &app,
+            &editor,
+            nvim.as_ref(),
+            notification("ringmd_theme", vec!["light-soft".into()]),
+        );
+        let calls = nvim.take_calls();
+        assert!(
+            matches!(&calls[..], [Call::Notify(method, _)] if method == "nvim_echo"),
+            "{calls:?}"
+        );
     }
 
     #[test]

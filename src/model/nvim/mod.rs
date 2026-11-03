@@ -1,6 +1,7 @@
 //! The embedded Neovim engine (F2): process, RPC, redraw decoding and input
 //! encoding.
 
+pub mod command;
 pub mod fake;
 pub mod input;
 pub mod redraw;
@@ -11,6 +12,7 @@ pub mod version;
 
 use rmpv::Value;
 
+pub use command::GuiCommand;
 pub use session::{NvimSession, SpawnOptions};
 pub use version::Version;
 
