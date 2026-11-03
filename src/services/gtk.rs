@@ -4,7 +4,9 @@ use gtk::gdk;
 use gtk::glib::prelude::*;
 use gtk::prelude::*;
 
-use super::{ClipboardService, LinkService, LocalBoxFuture, ServiceError};
+use std::path::PathBuf;
+
+use super::{ClipboardService, FileDialogService, LinkService, LocalBoxFuture, ServiceError};
 
 /// The system clipboard (F2.R8). Works on Wayland and X11 without external
 /// tools such as `xclip` or `wl-copy`.
@@ -150,5 +152,55 @@ fn prefers_dark(value: &gtk::glib::Variant) -> Option<bool> {
         1 => Some(true),
         2 => Some(false),
         _ => None,
+    }
+}
+
+/// Native open/save dialogs (F7.R2), through the file chooser portal when
+/// sandboxed. The parent window is set once it exists.
+#[derive(Debug, Default)]
+pub struct GtkFileDialogService {
+    parent: std::cell::RefCell<gtk::glib::WeakRef<gtk::Window>>,
+}
+
+impl GtkFileDialogService {
+    pub fn set_parent(&self, window: &impl IsA<gtk::Window>) {
+        self.parent.borrow().set(Some(window.upcast_ref()));
+    }
+
+    fn markdown_filter() -> gtk::gio::ListStore {
+        let filter = gtk::FileFilter::new();
+        filter.set_name(Some("Markdown"));
+        for pattern in ["*.md", "*.markdown", "*.mdown", "*.txt"] {
+            filter.add_pattern(pattern);
+        }
+        let filters = gtk::gio::ListStore::new::<gtk::FileFilter>();
+        filters.append(&filter);
+        filters
+    }
+}
+
+impl FileDialogService for GtkFileDialogService {
+    fn pick_open(&self) -> LocalBoxFuture<'_, Option<PathBuf>> {
+        let parent = self.parent.borrow().upgrade();
+        Box::pin(async move {
+            let dialog = gtk::FileDialog::builder()
+                .title("Open Markdown File")
+                .modal(true)
+                .filters(&Self::markdown_filter())
+                .build();
+            dialog.open_future(parent.as_ref()).await.ok()?.path()
+        })
+    }
+
+    fn pick_save<'a>(&'a self, suggested_name: &'a str) -> LocalBoxFuture<'a, Option<PathBuf>> {
+        let parent = self.parent.borrow().upgrade();
+        Box::pin(async move {
+            let dialog = gtk::FileDialog::builder()
+                .title("Save As")
+                .modal(true)
+                .initial_name(suggested_name)
+                .build();
+            dialog.save_future(parent.as_ref()).await.ok()?.path()
+        })
     }
 }

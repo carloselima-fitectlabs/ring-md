@@ -14,6 +14,7 @@ use crate::model::config::Setting;
 #[derive(Debug, Clone, PartialEq)]
 pub struct PdfExportCall {
     pub html: String,
+    pub base_uri: Option<String>,
     pub options: PdfOptions,
     pub output: PathBuf,
 }
@@ -36,11 +37,13 @@ impl PdfService for FakePdfService {
     fn export<'a>(
         &'a self,
         html: &'a str,
+        base_uri: Option<&'a str>,
         options: &'a PdfOptions,
         output: &'a Path,
     ) -> LocalBoxFuture<'a, Result<(), ServiceError>> {
         self.calls.borrow_mut().push(PdfExportCall {
             html: html.to_owned(),
+            base_uri: base_uri.map(Into::into),
             options: options.clone(),
             output: output.to_owned(),
         });
@@ -128,13 +131,13 @@ mod tests {
         let pdf = FakePdfService::default();
         let options = PdfOptions::default();
         assert_eq!(
-            block_on(pdf.export("<p>x</p>", &options, Path::new("a.pdf"))),
+            block_on(pdf.export("<p>x</p>", None, &options, Path::new("a.pdf"))),
             Ok(())
         );
 
         pdf.fail_next(ServiceError::Io("disk full".into()));
         assert_eq!(
-            block_on(pdf.export("<p>y</p>", &options, Path::new("b.pdf"))),
+            block_on(pdf.export("<p>y</p>", None, &options, Path::new("b.pdf"))),
             Err(ServiceError::Io("disk full".into()))
         );
         assert_eq!(pdf.calls.borrow().len(), 2);

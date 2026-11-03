@@ -6,7 +6,8 @@ use gtk::prelude::*;
 use super::dialogs;
 use super::grid_view::GridView;
 use super::preview_view::PreviewView;
-use crate::viewmodel::{AppViewModel, EditorViewModel, PreviewViewModel, ThemeViewModel};
+use crate::viewmodel::session::Targets;
+use crate::viewmodel::{AppViewModel, EditorViewModel, ExportViewModel, ThemeViewModel};
 
 const DEFAULT_WIDTH: i32 = 1100;
 const DEFAULT_HEIGHT: i32 = 720;
@@ -20,13 +21,10 @@ pub struct MainWindow {
 }
 
 impl MainWindow {
-    pub fn new(
-        app: &gtk::Application,
-        vm: AppViewModel,
-        editor_vm: &EditorViewModel,
-        preview_vm: &PreviewViewModel,
-        theme_vm: &ThemeViewModel,
-    ) -> Self {
+    pub fn new(app: &gtk::Application, targets: &Targets, editor_vm: &EditorViewModel) -> Self {
+        let vm = targets.app.clone();
+        let preview_vm = &targets.preview;
+        let theme_vm = &targets.theme;
         let editor = GridView::new(editor_vm);
         let preview = PreviewView::new(preview_vm).widget().clone();
 
@@ -41,11 +39,16 @@ impl MainWindow {
             .position(DEFAULT_WIDTH / 2)
             .build();
 
+        let overlay = gtk::Overlay::builder().child(&split).build();
+        let toast = Toast::new();
+        overlay.add_overlay(toast.widget());
+        show_export_results(&toast, &targets.export);
+
         let window = gtk::ApplicationWindow::builder()
             .application(app)
             .default_width(DEFAULT_WIDTH)
             .default_height(DEFAULT_HEIGHT)
-            .child(&split)
+            .child(&overlay)
             .build();
 
         vm.bind_property("title", &window, "title")
@@ -109,4 +112,71 @@ fn apply_theme(window: &gtk::ApplicationWindow, theme: &ThemeViewModel) {
     };
     update(theme);
     theme.connect_gtk_css_notify(update);
+}
+
+/// A short message at the bottom of the window that hides itself (F6.R6).
+#[derive(Debug, Clone)]
+struct Toast {
+    revealer: gtk::Revealer,
+    label: gtk::Label,
+    hide_after: std::rc::Rc<std::cell::RefCell<Option<glib::SourceId>>>,
+}
+
+impl Toast {
+    const VISIBLE_FOR: std::time::Duration = std::time::Duration::from_secs(4);
+
+    fn new() -> Self {
+        let label = gtk::Label::builder().wrap(true).max_width_chars(80).build();
+        label.add_css_class("ringmd-toast");
+        let revealer = gtk::Revealer::builder()
+            .child(&label)
+            .transition_type(gtk::RevealerTransitionType::SlideUp)
+            .halign(gtk::Align::Center)
+            .valign(gtk::Align::End)
+            .margin_bottom(24)
+            .can_target(false)
+            .build();
+        Self {
+            revealer,
+            label,
+            hide_after: Default::default(),
+        }
+    }
+
+    fn widget(&self) -> &gtk::Revealer {
+        &self.revealer
+    }
+
+    fn show(&self, message: &str, error: bool) {
+        self.label.set_text(message);
+        if error {
+            self.label.add_css_class("error");
+        } else {
+            self.label.remove_css_class("error");
+        }
+        self.revealer.set_reveal_child(true);
+        if let Some(previous) = self.hide_after.borrow_mut().take() {
+            previous.remove();
+        }
+        let revealer = self.revealer.downgrade();
+        let slot = self.hide_after.clone();
+        let id = glib::timeout_add_local_once(Self::VISIBLE_FOR, move || {
+            slot.borrow_mut().take();
+            if let Some(revealer) = revealer.upgrade() {
+                revealer.set_reveal_child(false);
+            }
+        });
+        self.hide_after.borrow_mut().replace(id);
+    }
+}
+
+fn show_export_results(toast: &Toast, export: &ExportViewModel) {
+    let toast_clone = toast.clone();
+    export.connect_is_exporting_notify(move |export| {
+        if export.is_exporting() {
+            toast_clone.show("Exporting PDF…", false);
+        }
+    });
+    let toast = toast.clone();
+    export.connect_finished(move |_, ok, message| toast.show(message, !ok));
 }

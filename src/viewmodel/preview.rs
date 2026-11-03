@@ -13,7 +13,7 @@ use gtk::glib::prelude::*;
 use gtk::glib::subclass::prelude::*;
 use rmpv::Value;
 
-use crate::model::render::MarkdownRenderer;
+use crate::model::render::{MarkdownRenderer, base_uri_for};
 use crate::services::LinkService;
 
 /// URI schemes a clicked link may open (F4.R7). Anything else is dropped.
@@ -220,18 +220,6 @@ impl PreviewViewModel {
             self.notify_html();
         }
     }
-}
-
-/// `file:///dir/` for the directory holding `path`.
-fn base_uri_for(path: &Path) -> Option<String> {
-    let absolute = std::path::absolute(path).ok()?;
-    let dir = absolute.parent()?;
-    let uri = glib::filename_to_uri(dir, None).ok()?;
-    Some(if uri.ends_with('/') {
-        uri.to_string()
-    } else {
-        format!("{uri}/")
-    })
 }
 
 #[cfg(test)]

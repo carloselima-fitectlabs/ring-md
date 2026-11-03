@@ -563,12 +563,15 @@ impl Palette {
              paned > separator {{ background: {bg2}; min-width: 1px; min-height: 1px; }}\n\
              popover > contents, popover > arrow {{ background: {bg1}; color: {fg1}; }}\n\
              window.dialog, .message-dialog {{ background: {bg1}; color: {fg1}; }}\n\
-             .dim-label {{ color: {gray}; }}\n",
+             .dim-label {{ color: {gray}; }}\n\
+             .ringmd-toast {{ background: {bg1}; color: {fg1}; border: 1px solid {bg2}; border-radius: 8px; padding: 8px 16px; }}\n\
+             .ringmd-toast.error {{ color: {red}; }}\n",
             bg0 = p.bg0,
             bg1 = p.bg1,
             bg2 = p.bg2,
             fg1 = p.fg1,
             gray = p.gray,
+            red = p.red,
         )
     }
 

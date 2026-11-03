@@ -39,3 +39,4 @@ strip = true
 
 [dev-dependencies]
 async-channel = "2"
+lopdf = "0.38"

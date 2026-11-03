@@ -4,8 +4,8 @@ A graphical, Linux-first Markdown editor powered by an embedded Neovim engine,
 with live preview, Gruvbox themes and PDF export.
 
 > **Status:** early development. The embedded Neovim editor, its bundled
-> config, the live preview and Gruvbox themes work (M0–M4); PDF export (M5)
-> is next.
+> config, the live preview, Gruvbox themes and PDF export work (M0–M5);
+> files & configuration (M6) are next.
 > See [docs/SPEC.md](docs/SPEC.md) for the specification and task breakdown.
 
 ## Building
@@ -54,10 +54,14 @@ page_size = "A4"     # or "Letter"
 margin_mm = 20
 ```
 
-Invalid values are logged and replaced by their defaults. Only `theme` takes
-effect so far; the other keys are wired up in M6. `:ExportPdf [path]` exists
-and tab-completes, but reports "not available yet" until PDF export (M5)
-lands.
+Invalid values are logged and replaced by their defaults. `theme` and
+`pdf.*` take effect so far; the other keys are wired up in M6.
+
+`:ExportPdf [path]` or `Ctrl+E` (Normal mode) writes a plain, printable PDF
+(white page, serif text) next to the file, or where you say; an unnamed
+buffer asks for a location. No external tools are needed. Known gap: links
+in the PDF are not clickable (WebKitGTK's PDF output has no link
+annotations), so each external link's address is printed after it.
 
 ## Development
 

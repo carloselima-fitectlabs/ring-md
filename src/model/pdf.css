@@ -1,0 +1,92 @@
+/* RingMD PDF stylesheet (F6.R2, F6.R4): plain and printable. White page,
+   black serif text, monospace code on light grey, no theme colours. Page
+   size and margins come from the print settings. */
+html, body {
+  background: #ffffff;
+  color: #000000;
+}
+
+body {
+  margin: 0;
+  font-family: "Noto Serif", "DejaVu Serif", "Liberation Serif", serif;
+  font-size: 11pt;
+  line-height: 1.5;
+  overflow-wrap: break-word;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  line-height: 1.25;
+  margin: 1.2em 0 0.5em;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+h1 { font-size: 22pt; border-bottom: 0.5pt solid #000; padding-bottom: 2pt; }
+h2 { font-size: 17pt; border-bottom: 0.5pt solid #999; padding-bottom: 2pt; }
+h3 { font-size: 14pt; }
+h4, h5, h6 { font-size: 11pt; }
+article > :first-child { margin-top: 0; }
+
+p { orphans: 3; widows: 3; }
+p, ul, ol, blockquote, pre, table { margin: 0 0 0.8em; }
+ul, ol { padding-left: 1.6em; }
+li > p { margin: 0; }
+.contains-task-list { list-style: none; padding-left: 1.2em; }
+.task-list-item-checkbox { margin: 0 0.4em 0 -1.2em; }
+
+a { color: #1a4480; text-decoration: underline; }
+/* WebKitGTK's PDF output has no clickable links (no link annotations), so
+   print the address after external links whose text is not the address. */
+a[href^="http"]:not(.footnote-backref)::after,
+a[href^="mailto:"]::after {
+  content: " <" attr(href) ">";
+  display: inline-block; /* keeps the link underline off the address */
+  color: #555;
+  font-size: 0.85em;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+blockquote {
+  margin-left: 0;
+  padding-left: 0.9em;
+  border-left: 2pt solid #999;
+  color: #333;
+}
+
+hr { border: 0; border-top: 0.5pt solid #999; margin: 1.5em 0; }
+img { max-width: 100%; }
+del { color: #555; }
+
+code, pre {
+  font-family: "Noto Sans Mono", "DejaVu Sans Mono", "Liberation Mono", monospace;
+  font-size: 9.5pt;
+}
+:not(pre) > code {
+  background: #f0f0f0;
+  padding: 0.05em 0.3em;
+  border-radius: 2pt;
+}
+pre {
+  background: #f0f0f0;
+  padding: 0.6em 0.8em;
+  border-radius: 3pt;
+  white-space: pre-wrap;
+  line-height: 1.35;
+}
+
+table { border-collapse: collapse; }
+th, td { border: 0.5pt solid #999; padding: 0.25em 0.6em; }
+th { background: #f0f0f0; }
+
+/* Keep blocks whole where possible (F6.R4). */
+pre, table, img, blockquote, tr, figure { break-inside: avoid; page-break-inside: avoid; }
+
+.footnotes { font-size: 9.5pt; border-top: 0.5pt solid #999; margin-top: 2em; }
+
+/* Code highlighting in dark, print-safe colours. */
+.hl-comment { color: #6a6a6a; font-style: italic; }
+.hl-string { color: #2e6b1f; }
+.hl-constant { color: #7a2f6a; }
+.hl-keyword, .hl-storage { color: #8a1c12; }
+.hl-entity.hl-name.hl-function, .hl-support.hl-function { color: #2e6b1f; }
+.hl-entity.hl-name.hl-type, .hl-support.hl-type { color: #7a5200; }

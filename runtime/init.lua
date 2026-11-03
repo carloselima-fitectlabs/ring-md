@@ -276,6 +276,7 @@ end, {
 
 -- GUI shortcuts, Normal mode only (D8); other modes keep Neovim's meaning.
 vim.keymap.set('n', '<C-p>', '<Cmd>Preview<CR>', { desc = 'Toggle the preview' })
+vim.keymap.set('n', '<C-e>', '<Cmd>ExportPdf<CR>', { desc = 'Export to PDF' })
 
 ---------------------------------------------------------------------------
 -- Your tweaks (F8.R4): ~/.config/ringmd/init.lua, after everything above.

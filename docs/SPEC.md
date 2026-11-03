@@ -158,13 +158,13 @@ src/
   app.rs      GTK application lifecycle
   cli.rs      `ringmd [FILE]`
   logging.rs  `RINGMD_LOG` tracing setup
-  model/      document.rs grid.rs clipboard.rs config.rs theme.rs render.rs preview.css nvim/ · pdf.rs
+  model/      document.rs grid.rs clipboard.rs config.rs theme.rs render.rs preview.css pdf.css nvim/
     nvim/     session.rs (process + RPC) rpc.rs redraw.rs input.rs command.rs version.rs runtime.rs fake.rs
-  viewmodel/  app.rs editor.rs preview.rs theme.rs session.rs (event routing) · export.rs
+  viewmodel/  app.rs editor.rs preview.rs theme.rs export.rs session.rs (event routing)
   view/       window.rs dialogs.rs grid_view.rs preview_view.rs
-  services/   traits (PDF, clipboard, file dialogs) + gtk.rs (real) + fake.rs for tests
+  services/   traits (PDF, clipboard, file dialogs, links, settings) + gtk.rs webkit.rs (real) + fake.rs for tests
 runtime/      init.lua
-tests/        architecture.rs (layering rules) nvim_session.rs (real nvim) · fixtures/
+tests/        architecture.rs (layering rules) nvim_session.rs (real nvim) pdf_export.rs (golden PDF) fixtures/
 ```
 
 Modules after `·` are planned for later milestones. `tests/architecture.rs`
@@ -381,7 +381,7 @@ pass and it has tests where testable.
 
 Legend: **S** ≈ ½ day · **M** ≈ 1–2 days · **L** ≈ 3–5 days
 
-Progress: **M0–M4 done** (plus T6.1) · M5–M7 not started.
+Progress: **M0–M5 done** (plus T6.1) · M6–M7 not started. Known gap: F6.R5 (see M5).
 
 ### M0 — Project foundation ✅
 
@@ -443,7 +443,9 @@ Progress: **M0–M4 done** (plus T6.1) · M5–M7 not started.
 | T4.5 | **ViewModel** `ThemeViewModel`: `variant` property, `set_variant` command; `:Theme <variant>` live switch + persistence | F5.R4 | T2.2, T4.2–T4.4, T6.1 | S |
 | T4.6 | `theme = "system"` following desktop color scheme | F5.R5 | T4.5 | S |
 
-### M5 — PDF export
+### M5 — PDF export ✅
+
+> **Known gap — F6.R5 / F6-AC3:** WebKitGTK 2.52 prints through Skia, whose PDFs carry no link annotations, so links are not clickable. The print stylesheet prints each external link's address after its text instead. `tests/pdf_export.rs::links_are_clickable` (ignored) checks this again after a WebKitGTK upgrade; alternatives are post-processing the PDF or a different PDF engine.
 
 | Task | Description | Reqs | Deps | Size |
 |------|-------------|------|------|------|

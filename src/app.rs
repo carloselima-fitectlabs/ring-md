@@ -9,10 +9,16 @@ use crate::cli::Cli;
 use crate::model::Document;
 use crate::model::config::{self, Config};
 use crate::model::nvim::{SpawnOptions, runtime};
-use crate::services::FileSettingsStore;
-use crate::services::gtk::{GtkClipboardService, GtkLinkService, SystemColorScheme};
+use crate::services::gtk::{
+    GtkClipboardService, GtkFileDialogService, GtkLinkService, SystemColorScheme,
+};
+use crate::services::webkit::WebKitPdfService;
+use crate::services::{FileSettingsStore, PdfOptions};
 use crate::view::MainWindow;
-use crate::viewmodel::{AppViewModel, PreviewViewModel, ThemeViewModel, session};
+use crate::viewmodel::session::{self, Targets};
+use crate::viewmodel::{
+    AppViewModel, ExportServices, ExportViewModel, PreviewViewModel, ThemeViewModel,
+};
 
 /// Application ID. Provisional until the Flatpak ID is chosen (T7.2).
 pub const APP_ID: &str = "io.github.ringmd.RingMD";
@@ -61,8 +67,25 @@ pub fn run(cli: Cli) -> glib::ExitCode {
             theme,
             move |dark| theme.set_system_prefers_dark(dark)
         ));
-        let editor = session::start(&vm, &preview, &theme, &options, clipboard);
-        MainWindow::new(app, vm, &editor, &preview, &theme).present();
+        let dialogs = Rc::new(GtkFileDialogService::default());
+        let export = ExportViewModel::new(ExportServices {
+            pdf: Rc::new(WebKitPdfService),
+            dialogs: dialogs.clone(),
+            options: PdfOptions {
+                page_size: config.pdf_page_size,
+                margin_mm: config.pdf_margin_mm,
+            },
+        });
+        let targets = Targets {
+            app: vm,
+            preview,
+            theme,
+            export,
+        };
+        let editor = session::start(&targets, &options, clipboard);
+        let window = MainWindow::new(app, &targets, &editor);
+        dialogs.set_parent(window.window());
+        window.present();
     });
 
     // Arguments were already parsed by clap; don't let GTK parse them again.

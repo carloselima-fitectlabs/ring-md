@@ -5,7 +5,10 @@ use std::rc::Rc;
 use gtk::glib;
 use rmpv::Value;
 
-use super::{AppViewModel, EditorServices, EditorViewModel, PreviewViewModel, ThemeViewModel};
+use super::{
+    AppViewModel, EditorServices, EditorViewModel, ExportViewModel, PreviewViewModel,
+    ThemeViewModel,
+};
 use crate::model::nvim::{GuiCommand, NvimApi, NvimEvent, NvimSession, SpawnOptions};
 use crate::services::ClipboardService;
 
@@ -16,18 +19,28 @@ pub struct ViewModels {
     pub editor: EditorViewModel,
     pub preview: PreviewViewModel,
     pub theme: ThemeViewModel,
+    pub export: ExportViewModel,
 }
 
-/// Start Neovim and wire it to `app`, `preview` and the returned editor.
-/// On failure the error is reported through `app` once the main loop runs
-/// (so the window is listening) and the editor stays detached (F2.R3).
+/// The ViewModels that exist before Neovim starts.
+#[derive(Debug, Clone)]
+pub struct Targets {
+    pub app: AppViewModel,
+    pub preview: PreviewViewModel,
+    pub theme: ThemeViewModel,
+    pub export: ExportViewModel,
+}
+
+/// Start Neovim and wire it to `targets` and the returned editor. On
+/// failure the error is reported through the app ViewModel once the main
+/// loop runs (so the window is listening) and the editor stays detached
+/// (F2.R3).
 pub fn start(
-    app: &AppViewModel,
-    preview: &PreviewViewModel,
-    theme: &ThemeViewModel,
+    targets: &Targets,
     options: &SpawnOptions,
     clipboard: Rc<dyn ClipboardService>,
 ) -> EditorViewModel {
+    let app = &targets.app;
     let (session, events) = match NvimSession::spawn(options) {
         Ok(started) => started,
         Err(e) => {
@@ -42,7 +55,8 @@ pub fn start(
         }
     };
     let nvim: Rc<dyn NvimApi> = Rc::new(session);
-    theme.attach_neovim(nvim.clone());
+    targets.theme.attach_neovim(nvim.clone());
+    targets.export.attach_neovim(nvim.clone());
     let editor = EditorViewModel::new(EditorServices {
         nvim: nvim.clone(),
         clipboard,
@@ -51,8 +65,9 @@ pub fn start(
     let vms = ViewModels {
         app: app.clone(),
         editor: editor.clone(),
-        preview: preview.clone(),
-        theme: theme.clone(),
+        preview: targets.preview.clone(),
+        theme: targets.theme.clone(),
+        export: targets.export.clone(),
     };
     glib::spawn_future_local(async move {
         while let Ok(event) = events.recv().await {
@@ -69,11 +84,12 @@ pub fn dispatch(vms: &ViewModels, nvim: &dyn NvimApi, event: NvimEvent) {
         editor,
         preview,
         theme,
+        ..
     } = vms;
     match event {
         NvimEvent::Notification { method, params } => {
             if let Some(command) = GuiCommand::from_notification(&method, &params) {
-                run_command(vms, nvim, command);
+                run_command(vms, command);
                 return;
             }
             match method.as_str() {
@@ -109,25 +125,17 @@ pub fn dispatch(vms: &ViewModels, nvim: &dyn NvimApi, event: NvimEvent) {
 
 /// Route a `:Preview` / `:ExportPdf` / `:Theme` command to the same
 /// ViewModel command a GUI shortcut uses (rule A5).
-fn run_command(vms: &ViewModels, nvim: &dyn NvimApi, command: GuiCommand) {
+fn run_command(vms: &ViewModels, command: GuiCommand) {
     tracing::debug!(?command, "command from neovim");
     match command {
         GuiCommand::TogglePreview => vms.app.toggle_preview(),
         GuiCommand::SetTheme(choice) => vms.theme.set_choice(choice),
-        // PDF export (M5) is not built yet; say so where the user typed
-        // the command.
-        GuiCommand::ExportPdf { .. } => {
-            echo_warning(nvim, "RingMD: PDF export is not available yet");
+        GuiCommand::ExportPdf { path } => {
+            let export = vms.export.clone();
+            let document = vms.app.document().path().map(Into::into);
+            glib::spawn_future_local(async move { export.export(path, document).await });
         }
     }
-}
-
-fn echo_warning(nvim: &dyn NvimApi, text: &str) {
-    let chunk = Value::Array(vec![text.into(), "WarningMsg".into()]);
-    nvim.notify(
-        "nvim_echo",
-        vec![Value::Array(vec![chunk]), true.into(), Value::Map(vec![])],
-    );
 }
 
 /// Stand-in used when Neovim failed to start: drops every call.
@@ -157,7 +165,11 @@ mod tests {
     use crate::model::Document;
     use crate::model::nvim::fake::{Call, FakeNvim};
     use crate::model::theme::{ThemeChoice, Variant};
-    use crate::services::fake::{FakeClipboardService, FakeLinkService, FakeSettingsStore};
+    use crate::services::fake::{
+        FakeClipboardService, FakeFileDialogService, FakeLinkService, FakePdfService,
+        FakeSettingsStore,
+    };
+    use crate::viewmodel::ExportServices;
 
     fn setup() -> (ViewModels, Rc<FakeNvim>) {
         let nvim = Rc::new(FakeNvim::new());
@@ -173,6 +185,11 @@ mod tests {
                 ThemeChoice::default(),
                 Rc::new(FakeSettingsStore::default()),
             ),
+            export: ExportViewModel::new(ExportServices {
+                pdf: Rc::new(FakePdfService::default()),
+                dialogs: Rc::new(FakeFileDialogService::default()),
+                options: Default::default(),
+            }),
         };
         (vms, nvim)
     }
@@ -222,18 +239,26 @@ mod tests {
     }
 
     #[test]
-    fn unbuilt_commands_warn_in_neovim() {
+    fn export_command_starts_an_export() {
         let (vms, nvim) = setup();
-        dispatch(
-            &vms,
-            nvim.as_ref(),
-            notification("ringmd_export_pdf", vec![Value::Nil]),
-        );
-        let calls = nvim.take_calls();
-        assert!(
-            matches!(&calls[..], [Call::Notify(method, _)] if method == "nvim_echo"),
-            "{calls:?}"
-        );
+        let finished = Rc::new(Cell::new(false));
+        let f = finished.clone();
+        vms.export.connect_finished(move |_, _, _| f.set(true));
+        let context = glib::MainContext::new();
+        context
+            .with_thread_default(|| {
+                dispatch(
+                    &vms,
+                    nvim.as_ref(),
+                    notification("ringmd_export_pdf", vec!["/tmp/x.pdf".into()]),
+                );
+                // The export runs on the main loop; without Neovim attached it
+                // reports an error rather than hanging.
+                while !finished.get() {
+                    context.iteration(true);
+                }
+            })
+            .unwrap();
     }
 
     #[test]

@@ -42,6 +42,27 @@ pub fn preview_page(article: &str, css: &str, theme_css: &str) -> String {
     )
 }
 
+/// The print stylesheet for PDF export (F6.R2): white, serif, no theme.
+pub const PDF_CSS: &str = include_str!("pdf.css");
+
+/// A standalone page for PDF export around rendered `article` HTML.
+pub fn pdf_page(article: &str) -> String {
+    preview_page(article, PDF_CSS, "")
+}
+
+/// `file:///dir/` for the directory holding `path`: the base for relative
+/// image paths in the preview and the PDF (F4.R6).
+pub fn base_uri_for(path: &std::path::Path) -> Option<String> {
+    let absolute = std::path::absolute(path).ok()?;
+    let dir = absolute.parent()?;
+    let uri = gtk::glib::filename_to_uri(dir, None).ok()?;
+    Some(if uri.ends_with('/') {
+        uri.to_string()
+    } else {
+        format!("{uri}/")
+    })
+}
+
 /// Prefix for syntect's CSS classes, so they cannot clash with ours.
 pub const CODE_CLASS_PREFIX: &str = "hl-";
 
@@ -216,6 +237,15 @@ mod tests {
         }
         // Every section heading keeps its source line for scroll sync.
         assert_eq!(html.matches("<h2 data-sourcepos=").count(), 40);
+    }
+
+    #[test]
+    fn pdf_page_is_plain_white() {
+        let page = pdf_page("<p>x</p>");
+        assert!(page.contains("background: #ffffff"));
+        assert!(page.contains("serif"));
+        assert!(!page.contains("--bg"), "no theme colours in the PDF");
+        assert!(page.contains("default-src 'none'"));
     }
 
     #[test]

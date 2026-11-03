@@ -15,15 +15,22 @@ pub enum Call {
     Respond(u64, Result<Value, Value>),
 }
 
-/// Records every call; requests succeed with `nil`.
+/// Records every call; requests succeed with `nil` unless a reply is set
+/// with [`FakeNvim::set_response`].
 #[derive(Debug, Default)]
 pub struct FakeNvim {
     calls: RefCell<Vec<Call>>,
+    response: RefCell<Option<Value>>,
 }
 
 impl FakeNvim {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Answer every later request with `value`.
+    pub fn set_response(&self, value: Value) {
+        self.response.replace(Some(value));
     }
 
     /// Take the calls recorded so far.
@@ -60,7 +67,8 @@ impl NvimApi for FakeNvim {
         self.calls
             .borrow_mut()
             .push(Call::Request(method.to_owned(), args));
-        Box::pin(async { Ok(Value::Nil) })
+        let response = self.response.borrow().clone().unwrap_or(Value::Nil);
+        Box::pin(async move { Ok(response) })
     }
 
     fn respond(&self, id: u64, result: Result<Value, Value>) {

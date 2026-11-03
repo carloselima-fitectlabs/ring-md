@@ -7,6 +7,7 @@
 
 pub mod fake;
 pub mod gtk;
+pub mod webkit;
 
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -47,9 +48,12 @@ impl Default for PdfOptions {
 
 /// Turns print-ready HTML into a PDF file (F6).
 pub trait PdfService {
+    /// Print the full HTML page `html` to `output`. Relative URLs (images)
+    /// resolve against `base_uri`.
     fn export<'a>(
         &'a self,
         html: &'a str,
+        base_uri: Option<&'a str>,
         options: &'a PdfOptions,
         output: &'a Path,
     ) -> LocalBoxFuture<'a, Result<(), ServiceError>>;
