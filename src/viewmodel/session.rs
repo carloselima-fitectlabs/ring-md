@@ -5,7 +5,7 @@ use std::rc::Rc;
 use gtk::glib;
 use rmpv::Value;
 
-use super::{AppViewModel, EditorServices, EditorViewModel, PreviewViewModel};
+use super::{AppViewModel, EditorServices, EditorViewModel, PreviewViewModel, ThemeViewModel};
 use crate::model::nvim::{GuiCommand, NvimApi, NvimEvent, NvimSession, SpawnOptions};
 use crate::services::ClipboardService;
 
@@ -15,6 +15,7 @@ pub struct ViewModels {
     pub app: AppViewModel,
     pub editor: EditorViewModel,
     pub preview: PreviewViewModel,
+    pub theme: ThemeViewModel,
 }
 
 /// Start Neovim and wire it to `app`, `preview` and the returned editor.
@@ -23,6 +24,7 @@ pub struct ViewModels {
 pub fn start(
     app: &AppViewModel,
     preview: &PreviewViewModel,
+    theme: &ThemeViewModel,
     options: &SpawnOptions,
     clipboard: Rc<dyn ClipboardService>,
 ) -> EditorViewModel {
@@ -40,6 +42,7 @@ pub fn start(
         }
     };
     let nvim: Rc<dyn NvimApi> = Rc::new(session);
+    theme.attach_neovim(nvim.clone());
     let editor = EditorViewModel::new(EditorServices {
         nvim: nvim.clone(),
         clipboard,
@@ -49,6 +52,7 @@ pub fn start(
         app: app.clone(),
         editor: editor.clone(),
         preview: preview.clone(),
+        theme: theme.clone(),
     };
     glib::spawn_future_local(async move {
         while let Ok(event) = events.recv().await {
@@ -64,11 +68,12 @@ pub fn dispatch(vms: &ViewModels, nvim: &dyn NvimApi, event: NvimEvent) {
         app,
         editor,
         preview,
+        theme,
     } = vms;
     match event {
         NvimEvent::Notification { method, params } => {
             if let Some(command) = GuiCommand::from_notification(&method, &params) {
-                run_command(app, nvim, command);
+                run_command(vms, nvim, command);
                 return;
             }
             match method.as_str() {
@@ -78,6 +83,7 @@ pub fn dispatch(vms: &ViewModels, nvim: &dyn NvimApi, event: NvimEvent) {
                     preview.set_document_path(app.document().path());
                 }
                 "ringmd_text" => preview.apply_text_event(&params),
+                "ringmd_ready" => theme.neovim_ready(),
                 "ringmd_cursor" => {
                     let line = params.first().and_then(Value::as_u64).unwrap_or(1);
                     preview.set_cursor_line(u32::try_from(line).unwrap_or(u32::MAX));
@@ -103,13 +109,13 @@ pub fn dispatch(vms: &ViewModels, nvim: &dyn NvimApi, event: NvimEvent) {
 
 /// Route a `:Preview` / `:ExportPdf` / `:Theme` command to the same
 /// ViewModel command a GUI shortcut uses (rule A5).
-fn run_command(app: &AppViewModel, nvim: &dyn NvimApi, command: GuiCommand) {
+fn run_command(vms: &ViewModels, nvim: &dyn NvimApi, command: GuiCommand) {
     tracing::debug!(?command, "command from neovim");
     match command {
-        GuiCommand::TogglePreview => app.toggle_preview(),
-        // Themes (M4) and PDF export (M5) are not built yet; say so where
-        // the user typed the command.
-        GuiCommand::SetTheme(_) => echo_warning(nvim, "RingMD: themes are not available yet"),
+        GuiCommand::TogglePreview => vms.app.toggle_preview(),
+        GuiCommand::SetTheme(choice) => vms.theme.set_choice(choice),
+        // PDF export (M5) is not built yet; say so where the user typed
+        // the command.
         GuiCommand::ExportPdf { .. } => {
             echo_warning(nvim, "RingMD: PDF export is not available yet");
         }
@@ -150,7 +156,8 @@ mod tests {
     use super::*;
     use crate::model::Document;
     use crate::model::nvim::fake::{Call, FakeNvim};
-    use crate::services::fake::{FakeClipboardService, FakeLinkService};
+    use crate::model::theme::{ThemeChoice, Variant};
+    use crate::services::fake::{FakeClipboardService, FakeLinkService, FakeSettingsStore};
 
     fn setup() -> (ViewModels, Rc<FakeNvim>) {
         let nvim = Rc::new(FakeNvim::new());
@@ -162,6 +169,10 @@ mod tests {
             app: AppViewModel::new(Document::new()),
             editor,
             preview: PreviewViewModel::new(Rc::new(FakeLinkService::default())),
+            theme: ThemeViewModel::new(
+                ThemeChoice::default(),
+                Rc::new(FakeSettingsStore::default()),
+            ),
         };
         (vms, nvim)
     }
@@ -200,12 +211,23 @@ mod tests {
     }
 
     #[test]
-    fn unbuilt_commands_warn_in_neovim() {
+    fn theme_command_switches_variant() {
         let (vms, nvim) = setup();
         dispatch(
             &vms,
             nvim.as_ref(),
             notification("ringmd_theme", vec!["light-soft".into()]),
+        );
+        assert_eq!(vms.theme.current_variant(), Variant::LightSoft);
+    }
+
+    #[test]
+    fn unbuilt_commands_warn_in_neovim() {
+        let (vms, nvim) = setup();
+        dispatch(
+            &vms,
+            nvim.as_ref(),
+            notification("ringmd_export_pdf", vec![Value::Nil]),
         );
         let calls = nvim.take_calls();
         assert!(

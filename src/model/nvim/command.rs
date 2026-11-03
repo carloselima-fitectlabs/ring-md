@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use rmpv::Value;
 
-use crate::model::theme::Variant;
+use crate::model::theme::ThemeChoice;
 
 /// A GUI command issued from Neovim.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,8 +14,8 @@ pub enum GuiCommand {
     TogglePreview,
     /// `:ExportPdf [path]`; `None` means "use the default path".
     ExportPdf { path: Option<PathBuf> },
-    /// `:Theme <variant>`
-    SetTheme(Variant),
+    /// `:Theme <variant>` or `:Theme system[-contrast]`
+    SetTheme(ThemeChoice),
 }
 
 impl GuiCommand {
@@ -59,7 +59,19 @@ mod tests {
         );
         assert_eq!(
             GuiCommand::from_notification("ringmd_theme", &["light-soft".into()]),
-            Some(GuiCommand::SetTheme(Variant::LightSoft))
+            Some(GuiCommand::SetTheme(ThemeChoice::Fixed(
+                crate::model::theme::Variant::LightSoft
+            )))
+        );
+    }
+
+    #[test]
+    fn decodes_system_theme() {
+        assert_eq!(
+            GuiCommand::from_notification("ringmd_theme", &["system".into()]),
+            Some(GuiCommand::SetTheme(ThemeChoice::System(
+                crate::model::theme::Contrast::Medium
+            )))
         );
     }
 

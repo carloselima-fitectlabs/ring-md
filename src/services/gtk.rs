@@ -1,6 +1,7 @@
 //! Real service implementations backed by GTK.
 
 use gtk::gdk;
+use gtk::glib::prelude::*;
 use gtk::prelude::*;
 
 use super::{ClipboardService, LinkService, LocalBoxFuture, ServiceError};
@@ -62,5 +63,92 @@ impl LinkService for GtkLinkService {
                 }
             },
         );
+    }
+}
+
+/// Follows the desktop's light/dark preference (F5.R5) through the XDG
+/// Settings portal (`org.freedesktop.appearance color-scheme`), which GNOME,
+/// KDE and Flatpak all provide. Without a portal, nothing is reported and
+/// the theme stays on its default (dark).
+#[derive(Debug)]
+pub struct SystemColorScheme;
+
+impl SystemColorScheme {
+    const BUS_NAME: &str = "org.freedesktop.portal.Desktop";
+    const PATH: &str = "/org/freedesktop/portal/desktop";
+    const INTERFACE: &str = "org.freedesktop.portal.Settings";
+    const NAMESPACE: &str = "org.freedesktop.appearance";
+    const KEY: &str = "color-scheme";
+
+    /// Call `on_change(prefers_dark)` now (once known) and whenever the
+    /// desktop setting changes.
+    pub fn watch(on_change: impl Fn(bool) + 'static) {
+        use gtk::gio;
+        use gtk::glib;
+        let on_change = std::rc::Rc::new(on_change);
+        gio::DBusProxy::for_bus(
+            gio::BusType::Session,
+            gio::DBusProxyFlags::DO_NOT_AUTO_START_AT_CONSTRUCTION,
+            None,
+            Self::BUS_NAME,
+            Self::PATH,
+            Self::INTERFACE,
+            gio::Cancellable::NONE,
+            move |proxy| {
+                let proxy = match proxy {
+                    Ok(proxy) => proxy,
+                    Err(e) => {
+                        tracing::debug!(error = %e, "no settings portal; keeping the default theme");
+                        return;
+                    }
+                };
+                let changed = on_change.clone();
+                proxy.connect_local("g-signal", false, move |args| {
+                    let signal = args.get(2).and_then(|v| v.get::<String>().ok());
+                    let params = args.get(3).and_then(|v| v.get::<glib::Variant>().ok());
+                    if signal.as_deref() == Some("SettingChanged")
+                        && let Some(params) = params
+                        && let Some((namespace, key, value)) =
+                            params.get::<(String, String, glib::Variant)>()
+                        && namespace == Self::NAMESPACE
+                        && key == Self::KEY
+                        && let Some(dark) = prefers_dark(&value)
+                    {
+                        changed(dark);
+                    }
+                    None
+                });
+                proxy.call(
+                    "ReadOne",
+                    Some(&(Self::NAMESPACE, Self::KEY).to_variant()),
+                    gio::DBusCallFlags::NONE,
+                    -1,
+                    gio::Cancellable::NONE,
+                    move |result| match result {
+                        Ok(reply) => {
+                            if let Some(dark) = reply
+                                .child_value(0)
+                                .as_variant()
+                                .and_then(|v| prefers_dark(&v))
+                            {
+                                on_change(dark);
+                            }
+                        }
+                        Err(e) => tracing::debug!(error = %e, "could not read the color scheme"),
+                    },
+                );
+            },
+        );
+    }
+}
+
+/// `color-scheme`: 1 = prefer dark, 2 = prefer light, 0 = no preference.
+fn prefers_dark(value: &gtk::glib::Variant) -> Option<bool> {
+    // Some portals wrap the value in one more variant.
+    let value = value.as_variant().unwrap_or_else(|| value.clone());
+    match value.get::<u32>()? {
+        1 => Some(true),
+        2 => Some(false),
+        _ => None,
     }
 }

@@ -6,7 +6,7 @@ use gtk::prelude::*;
 use super::dialogs;
 use super::grid_view::GridView;
 use super::preview_view::PreviewView;
-use crate::viewmodel::{AppViewModel, EditorViewModel, PreviewViewModel};
+use crate::viewmodel::{AppViewModel, EditorViewModel, PreviewViewModel, ThemeViewModel};
 
 const DEFAULT_WIDTH: i32 = 1100;
 const DEFAULT_HEIGHT: i32 = 720;
@@ -25,6 +25,7 @@ impl MainWindow {
         vm: AppViewModel,
         editor_vm: &EditorViewModel,
         preview_vm: &PreviewViewModel,
+        theme_vm: &ThemeViewModel,
     ) -> Self {
         let editor = GridView::new(editor_vm);
         let preview = PreviewView::new(preview_vm).widget().clone();
@@ -61,6 +62,8 @@ impl MainWindow {
             .bidirectional()
             .build();
 
+        apply_theme(&window, theme_vm);
+
         vm.connect_error_raised(glib::clone!(
             #[weak]
             window,
@@ -87,4 +90,23 @@ impl MainWindow {
         self.window.present();
         self.editor.grab_focus();
     }
+}
+
+/// Window chrome colours from the theme (F5.R2), live on every change.
+fn apply_theme(window: &gtk::ApplicationWindow, theme: &ThemeViewModel) {
+    let provider = gtk::CssProvider::new();
+    gtk::style_context_add_provider_for_display(
+        &WidgetExt::display(window),
+        &provider,
+        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+    let update = move |theme: &ThemeViewModel| {
+        provider.load_from_string(&theme.gtk_css());
+        if let Some(settings) = gtk::Settings::default() {
+            // Dialogs and other stock widgets follow the variant's brightness.
+            settings.set_gtk_application_prefer_dark_theme(theme.is_dark());
+        }
+    };
+    update(theme);
+    theme.connect_gtk_css_notify(update);
 }

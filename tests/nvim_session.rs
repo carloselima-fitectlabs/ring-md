@@ -10,7 +10,7 @@ use gtk::glib;
 use ringmd::model::Grid;
 use ringmd::model::nvim::redraw;
 use ringmd::model::nvim::{GuiCommand, NvimApi, NvimEvent, NvimSession, SpawnOptions, runtime};
-use ringmd::model::theme::Variant;
+use ringmd::model::theme::{ThemeChoice, Variant};
 use rmpv::Value;
 
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -443,7 +443,7 @@ fn commands_complete() {
                 "{command}"
             );
         }
-        let all: Vec<Value> = Variant::ALL.iter().map(|v| v.name().into()).collect();
+        let all: Vec<Value> = ThemeChoice::names().into_iter().map(Into::into).collect();
         assert_eq!(
             h.eval("getcompletion('Theme ', 'cmdline')").await,
             Value::Array(all)
@@ -469,7 +469,7 @@ fn commands_reach_the_gui() {
         h.nvim.input(":Theme bogus<CR><CR>:Theme light-soft<CR>");
         assert_eq!(
             h.next_command(":Theme").await,
-            GuiCommand::SetTheme(Variant::LightSoft)
+            GuiCommand::SetTheme(ThemeChoice::Fixed(Variant::LightSoft))
         );
 
         h.nvim.input(":ExportPdf<CR>");
@@ -543,8 +543,54 @@ fn ctrl_p_toggles_preview_in_normal_mode_only() {
         h.nvim.input("i<C-p><Esc>:Theme dark-soft<CR><C-p>");
         assert_eq!(
             h.next_command("first command").await,
-            GuiCommand::SetTheme(Variant::DarkSoft)
+            GuiCommand::SetTheme(ThemeChoice::Fixed(Variant::DarkSoft))
         );
         assert_eq!(h.next_command("Ctrl+P").await, GuiCommand::TogglePreview);
+    });
+}
+
+#[test]
+fn theme_highlights_apply_in_neovim() {
+    let mut h = Harness::start("theme_highlights_apply_in_neovim");
+    block_on(async {
+        h.attach().await;
+        h.wait_for("ringmd_ready", |event, _| {
+            notification(event, "ringmd_ready").map(|_| ())
+        })
+        .await;
+        for (variant, background, normal_bg) in [
+            (Variant::LightSoft, "light", 0xf2e5bc),
+            (Variant::DarkHard, "dark", 0x1d2021),
+        ] {
+            h.nvim
+                .request(
+                    "nvim_exec_lua",
+                    ringmd::model::theme::apply_highlights_args(variant),
+                )
+                .await
+                .unwrap();
+            assert_eq!(h.eval("&background").await, background.into());
+            assert_eq!(h.eval("g:colors_name").await, "ringmd-gruvbox".into());
+            let normal = h
+                .nvim
+                .request(
+                    "nvim_get_hl",
+                    vec![0.into(), Value::Map(vec![("name".into(), "Normal".into())])],
+                )
+                .await
+                .unwrap();
+            let bg = normal
+                .as_map()
+                .unwrap()
+                .iter()
+                .find(|(k, _)| k.as_str() == Some("bg"))
+                .and_then(|(_, v)| v.as_u64());
+            assert_eq!(bg, Some(normal_bg), "{variant}");
+        }
+        // Treesitter captures resolve to the Markdown groups.
+        let heading = h
+            .eval("luaeval('vim.api.nvim_get_hl(0, {name = \"@markup.heading.1\"}).link')")
+            .await;
+        assert_eq!(heading, "markdownH1".into());
     });
 }

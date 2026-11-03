@@ -158,9 +158,9 @@ src/
   app.rs      GTK application lifecycle
   cli.rs      `ringmd [FILE]`
   logging.rs  `RINGMD_LOG` tracing setup
-  model/      document.rs grid.rs clipboard.rs theme.rs render.rs preview.css nvim/ · pdf.rs config.rs
+  model/      document.rs grid.rs clipboard.rs config.rs theme.rs render.rs preview.css nvim/ · pdf.rs
     nvim/     session.rs (process + RPC) rpc.rs redraw.rs input.rs command.rs version.rs runtime.rs fake.rs
-  viewmodel/  app.rs editor.rs preview.rs session.rs (event routing) · theme.rs export.rs
+  viewmodel/  app.rs editor.rs preview.rs theme.rs session.rs (event routing) · export.rs
   view/       window.rs dialogs.rs grid_view.rs preview_view.rs
   services/   traits (PDF, clipboard, file dialogs) + gtk.rs (real) + fake.rs for tests
 runtime/      init.lua
@@ -381,7 +381,7 @@ pass and it has tests where testable.
 
 Legend: **S** ≈ ½ day · **M** ≈ 1–2 days · **L** ≈ 3–5 days
 
-Progress: **M0–M3 done** · M4–M7 not started.
+Progress: **M0–M4 done** (plus T6.1) · M5–M7 not started.
 
 ### M0 — Project foundation ✅
 
@@ -432,7 +432,7 @@ Progress: **M0–M3 done** · M4–M7 not started.
 | T3.7 | Scroll sync: `CursorMoved` → `PreviewViewModel.scroll_target_line` → View scrolls to nearest `data-sourcepos` element | F4.R4 | T3.4 | M |
 | T3.8 | `AppViewModel.preview_visible` + `toggle_preview` command, bound to `:Preview` and `Ctrl+P` | F4.R9 | T2.2, T3.3 | S |
 
-### M4 — Gruvbox theme & variants
+### M4 — Gruvbox theme & variants ✅
 
 | Task | Description | Reqs | Deps | Size |
 |------|-------------|------|------|------|
@@ -457,7 +457,7 @@ Progress: **M0–M3 done** · M4–M7 not started.
 
 | Task | Description | Reqs | Deps | Size |
 |------|-------------|------|------|------|
-| T6.1 | **Model** `Config`: TOML load/save, defaults, validation with warnings | F9.R1–R4 | T0.1 | S |
+| T6.1 ✅ | **Model** `Config`: TOML load/save, defaults, validation with warnings (done with M4, for `:Theme` persistence; other keys are wired in M6) | F9.R1–R4 | T0.1 | S |
 | T6.2 | Unsaved-changes flow in `AppViewModel`; View shows the dialog | F1.R5 | T1.8 | S |
 | T6.3 | `Ctrl+O` open / `Ctrl+S` save & Save As choosers | F7.R2 | T1.1 | S |
 | T6.4 | Drag-and-drop file open | F7.R4 | T1.1 | S |

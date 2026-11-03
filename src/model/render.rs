@@ -27,12 +27,17 @@ pub const PREVIEW_CSP: &str =
 /// Id of the element whose contents are the rendered document.
 pub const ARTICLE_ID: &str = "ringmd-article";
 
-/// The full preview page around already-rendered `article` HTML.
-pub fn preview_page(article: &str, css: &str) -> String {
+/// Id of the `<style>` element holding the theme's custom properties.
+pub const THEME_STYLE_ID: &str = "ringmd-theme";
+
+/// The full preview page around already-rendered `article` HTML. `css` is
+/// the base stylesheet; `theme_css` overrides its colours and is kept in
+/// its own element so a theme switch can replace it in place.
+pub fn preview_page(article: &str, css: &str, theme_css: &str) -> String {
     format!(
         "<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\">\n\
          <meta http-equiv=\"Content-Security-Policy\" content=\"{PREVIEW_CSP}\">\n\
-         <style>{css}</style></head>\n\
+         <style>{css}</style>\n<style id=\"{THEME_STYLE_ID}\">{theme_css}</style></head>\n\
          <body><article id=\"{ARTICLE_ID}\">{article}</article></body></html>\n"
     )
 }
@@ -192,10 +197,11 @@ mod tests {
 
     #[test]
     fn page_wraps_article_with_policy() {
-        let page = preview_page("<p>x</p>", "body{}");
+        let page = preview_page("<p>x</p>", "body{}", ":root{--bg:#000}");
         assert!(page.contains(r#"<article id="ringmd-article"><p>x</p></article>"#));
         assert!(page.contains("default-src 'none'"));
         assert!(page.contains("<style>body{}</style>"));
+        assert!(page.contains(r#"<style id="ringmd-theme">:root{--bg:#000}</style>"#));
         assert!(PREVIEW_CSS.contains("--bg: #282828"));
     }
 

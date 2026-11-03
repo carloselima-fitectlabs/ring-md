@@ -27,13 +27,7 @@ pub enum ServiceError {
     Other(String),
 }
 
-/// Paper sizes supported by PDF export (F6.R3).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum PageSize {
-    #[default]
-    A4,
-    Letter,
-}
+pub use crate::model::config::PageSize;
 
 /// Options for a PDF export (F6.R3).
 #[derive(Debug, Clone, PartialEq)]
@@ -77,4 +71,30 @@ pub trait FileDialogService {
 /// preview go to the system browser (F4.R7).
 pub trait LinkService {
     fn open(&self, uri: &str);
+}
+
+/// Persists settings changed from inside the app (F9.R4).
+pub trait SettingsStore {
+    fn save(&self, setting: &crate::model::config::Setting);
+}
+
+/// Saves settings into `config.toml`, keeping the rest of the file.
+#[derive(Debug, Clone)]
+pub struct FileSettingsStore {
+    path: PathBuf,
+}
+
+impl FileSettingsStore {
+    pub fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+}
+
+impl SettingsStore for FileSettingsStore {
+    fn save(&self, setting: &crate::model::config::Setting) {
+        match crate::model::config::save_setting(&self.path, setting) {
+            Ok(()) => tracing::debug!(?setting, path = %self.path.display(), "saved setting"),
+            Err(e) => tracing::warn!(error = %e, "could not save setting"),
+        }
+    }
 }

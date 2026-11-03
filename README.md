@@ -4,7 +4,8 @@ A graphical, Linux-first Markdown editor powered by an embedded Neovim engine,
 with live preview, Gruvbox themes and PDF export.
 
 > **Status:** early development. The embedded Neovim editor, its bundled
-> config and the live preview work (M0–M3); Gruvbox themes (M4) are next.
+> config, the live preview and Gruvbox themes work (M0–M4); PDF export (M5)
+> is next.
 > See [docs/SPEC.md](docs/SPEC.md) for the specification and task breakdown.
 
 ## Building
@@ -32,9 +33,31 @@ The preview pane renders the buffer as you type (CommonMark + GFM: tables,
 task lists, footnotes, highlighted code) and follows the cursor. Scripts in
 documents never run; links open in your browser; remote images load, other
 remote resources do not. Inside the editor, `:Preview` or `Ctrl+P` (Normal
-mode) toggles the preview pane. `:Theme <variant>`
-and `:ExportPdf [path]` exist and tab-complete, but only report "not
-available yet" until themes (M4) and PDF export (M5) land.
+mode) toggles the preview pane.
+
+`:Theme <variant>` switches between the Gruvbox variants (`dark-hard`,
+`dark-medium`, `dark-soft`, `light-hard`, `light-medium`, `light-soft`)
+live, or `system` / `system-hard` / `system-soft` to follow the desktop's
+dark/light preference. The choice is saved to
+`~/.config/ringmd/config.toml`, which also accepts (all optional):
+
+```toml
+theme = "dark-medium"
+font = "Monospace"
+font_size = 12
+[preview]
+visible = true
+debounce_ms = 50
+sync_scroll = true
+[pdf]
+page_size = "A4"     # or "Letter"
+margin_mm = 20
+```
+
+Invalid values are logged and replaced by their defaults. Only `theme` takes
+effect so far; the other keys are wired up in M6. `:ExportPdf [path]` exists
+and tab-completes, but reports "not available yet" until PDF export (M5)
+lands.
 
 ## Development
 

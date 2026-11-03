@@ -144,6 +144,14 @@ api.nvim_create_autocmd(
   { group = group, callback = report_buffer }
 )
 
+-- Startup is done (your init.lua included): the GUI applies the theme now.
+api.nvim_create_autocmd('VimEnter', {
+  group = group,
+  callback = function()
+    notify_gui('ringmd_ready')
+  end,
+})
+
 ---------------------------------------------------------------------------
 -- Live preview feed (F4.R2, F4.R4)
 ---------------------------------------------------------------------------
@@ -222,7 +230,8 @@ api.nvim_create_autocmd({ 'CursorMoved', 'CursorMovedI' }, {
 -- User commands (F8.R2)
 ---------------------------------------------------------------------------
 
--- Gruvbox variants (F5.R1). Must match `model::theme::Variant`.
+-- Gruvbox variants (F5.R1) and `system` (follow the desktop, F5.R5).
+-- Must match `model::theme::ThemeChoice::names()`.
 local THEMES = {
   'dark-hard',
   'dark-medium',
@@ -230,6 +239,9 @@ local THEMES = {
   'light-hard',
   'light-medium',
   'light-soft',
+  'system',
+  'system-hard',
+  'system-soft',
 }
 
 api.nvim_create_user_command('Preview', function()

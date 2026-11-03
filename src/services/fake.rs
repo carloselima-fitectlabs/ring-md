@@ -6,8 +6,9 @@ use std::path::{Path, PathBuf};
 
 use super::{
     ClipboardService, FileDialogService, LinkService, LocalBoxFuture, PdfOptions, PdfService,
-    ServiceError,
+    ServiceError, SettingsStore,
 };
+use crate::model::config::Setting;
 
 /// One recorded call to [`FakePdfService::export`].
 #[derive(Debug, Clone, PartialEq)]
@@ -97,6 +98,18 @@ pub struct FakeLinkService {
 impl LinkService for FakeLinkService {
     fn open(&self, uri: &str) {
         self.opened.borrow_mut().push(uri.to_owned());
+    }
+}
+
+/// Records saved settings.
+#[derive(Debug, Default)]
+pub struct FakeSettingsStore {
+    pub saved: RefCell<Vec<Setting>>,
+}
+
+impl SettingsStore for FakeSettingsStore {
+    fn save(&self, setting: &Setting) {
+        self.saved.borrow_mut().push(setting.clone());
     }
 }
 

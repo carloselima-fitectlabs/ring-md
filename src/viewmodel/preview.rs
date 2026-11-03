@@ -35,6 +35,14 @@ mod imp {
         #[property(get)]
         pub(super) base_uri: RefCell<String>,
 
+        /// Theme colours for the page (CSS custom properties, F5.R2).
+        #[property(get, set = Self::set_theme_css, explicit_notify)]
+        pub(super) theme_css: RefCell<String>,
+
+        /// Page background (`#rrggbb`) shown before the page has loaded.
+        #[property(get, set = Self::set_background, explicit_notify)]
+        pub(super) background: RefCell<String>,
+
         /// 1-based source line the preview should keep in view (F4.R4).
         #[property(get)]
         pub(super) scroll_target_line: Cell<u32>,
@@ -54,6 +62,8 @@ mod imp {
             Self {
                 html: RefCell::default(),
                 base_uri: RefCell::default(),
+                theme_css: RefCell::default(),
+                background: RefCell::new("#282828".into()),
                 scroll_target_line: Cell::new(1),
                 active: Cell::new(true),
                 pending: RefCell::default(),
@@ -70,6 +80,20 @@ mod imp {
     }
 
     impl PreviewViewModel {
+        fn set_theme_css(&self, css: String) {
+            if *self.theme_css.borrow() != css {
+                self.theme_css.replace(css);
+                self.obj().notify_theme_css();
+            }
+        }
+
+        fn set_background(&self, color: String) {
+            if *self.background.borrow() != color {
+                self.background.replace(color);
+                self.obj().notify_background();
+            }
+        }
+
         fn set_active(&self, active: bool) {
             if self.active.replace(active) != active {
                 self.obj().notify_active();

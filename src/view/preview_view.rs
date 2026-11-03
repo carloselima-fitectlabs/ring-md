@@ -13,7 +13,7 @@ use gtk::glib;
 use gtk::prelude::*;
 use webkit6::prelude::*;
 
-use crate::model::render::{self, ARTICLE_ID};
+use crate::model::render::{self, ARTICLE_ID, THEME_STYLE_ID};
 use crate::viewmodel::PreviewViewModel;
 
 /// The preview widget. Cheap to clone.
@@ -33,8 +33,8 @@ impl PreviewView {
             settings.set_enable_page_cache(false);
             settings.set_enable_back_forward_navigation_gestures(false);
         }
-        // Avoid a white flash before the stylesheet applies.
-        web_view.set_background_color(&gtk::gdk::RGBA::new(0.157, 0.157, 0.157, 1.0));
+        // Avoid a flash of the wrong colour before the stylesheet applies.
+        set_background(&web_view, &vm.background());
 
         let loaded = Rc::new(Cell::new(false));
         let view = Self { web_view };
@@ -50,6 +50,7 @@ impl PreviewView {
                 if event == webkit6::LoadEvent::Finished {
                     loaded.set(true);
                     // Content may have changed while the page loaded.
+                    run(web_view, &theme_script(&vm.theme_css()));
                     run(web_view, &patch_script(&vm.html()));
                     run(web_view, &scroll_script(vm.scroll_target_line()));
                 }
@@ -93,6 +94,22 @@ impl PreviewView {
                 }
             }
         ));
+        vm.connect_theme_css_notify(glib::clone!(
+            #[weak(rename_to = web_view)]
+            view.web_view,
+            #[strong]
+            loaded,
+            move |vm| {
+                if loaded.get() {
+                    run(&web_view, &theme_script(&vm.theme_css()));
+                }
+            }
+        ));
+        vm.connect_background_notify(glib::clone!(
+            #[weak(rename_to = web_view)]
+            view.web_view,
+            move |vm| set_background(&web_view, &vm.background())
+        ));
         vm.connect_base_uri_notify(glib::clone!(
             #[strong]
             view,
@@ -111,7 +128,7 @@ impl PreviewView {
     fn load_page(&self, vm: &PreviewViewModel, loaded: &Cell<bool>) {
         loaded.set(false);
         tracing::debug!(base = %vm.base_uri(), "loading preview page");
-        let page = render::preview_page(&vm.html(), render::PREVIEW_CSS);
+        let page = render::preview_page(&vm.html(), render::PREVIEW_CSS, &vm.theme_css());
         let base = vm.base_uri();
         self.web_view
             .load_html(&page, (!base.is_empty()).then_some(base.as_str()));
@@ -167,6 +184,22 @@ fn run(web_view: &webkit6::WebView, script: &str) {
             tracing::warn!(error = %e, "preview script failed");
         }
     });
+}
+
+fn set_background(web_view: &webkit6::WebView, color: &str) {
+    match gtk::gdk::RGBA::parse(color) {
+        Ok(rgba) => web_view.set_background_color(&rgba),
+        Err(_) => tracing::warn!(%color, "invalid preview background"),
+    }
+}
+
+/// Swap the theme's colours in place (no reload, F5-AC1).
+fn theme_script(css: &str) -> String {
+    format!(
+        "document.getElementById({}).textContent = {}; void 0;",
+        js_string(THEME_STYLE_ID),
+        js_string(css)
+    )
 }
 
 /// Replace the article contents; the page keeps its scroll position.
@@ -238,6 +271,14 @@ mod tests {
         assert_eq!(
             patch_script("<p>x</p>"),
             r#"document.getElementById("ringmd-article").innerHTML = "\u003cp>x\u003c/p>"; void 0;"#
+        );
+    }
+
+    #[test]
+    fn theme_script_targets_the_theme_style() {
+        assert_eq!(
+            theme_script(":root{}"),
+            r#"document.getElementById("ringmd-theme").textContent = ":root{}"; void 0;"#
         );
     }
 
