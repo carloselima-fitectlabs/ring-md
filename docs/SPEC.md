@@ -153,13 +153,22 @@ The code is split into three layers. Dependencies only point downward:
 
 ```
 src/
-  main.rs
-  model/      nvim/ grid.rs document.rs render.rs theme.rs pdf.rs config.rs
-  viewmodel/  app.rs editor.rs preview.rs theme.rs export.rs
-  view/       window.rs grid_view.rs preview_view.rs dialogs.rs
+  main.rs     entry point: CLI → logging → app
+  lib.rs      crate root (layers below)
+  app.rs      GTK application lifecycle
+  cli.rs      `ringmd [FILE]`
+  logging.rs  `RINGMD_LOG` tracing setup
+  model/      document.rs · nvim/ grid.rs render.rs theme.rs pdf.rs config.rs
+  viewmodel/  app.rs · editor.rs preview.rs theme.rs export.rs
+  view/       window.rs dialogs.rs · grid_view.rs preview_view.rs
+  services/   traits (PDF, clipboard, file dialogs) + fake.rs for tests
 runtime/      init.lua
-tests/        fixtures/ integration/
+tests/        architecture.rs (layering rules) · fixtures/
 ```
+
+Modules after `·` are planned for later milestones. `tests/architecture.rs`
+enforces rules A1, A2 and A4 by failing the build when a lower layer imports
+GTK UI types or a higher layer.
 
 ---
 
@@ -371,7 +380,9 @@ pass and it has tests where testable.
 
 Legend: **S** ≈ ½ day · **M** ≈ 1–2 days · **L** ≈ 3–5 days
 
-### M0 — Project foundation
+Progress: **M0 done** · M1–M7 not started.
+
+### M0 — Project foundation ✅
 
 | Task | Description | Reqs | Deps | Size |
 |------|-------------|------|------|------|
