@@ -35,6 +35,9 @@ pub struct SpawnOptions {
     /// Extra environment variables for the child (tests point the `XDG_*`
     /// directories somewhere private).
     pub env: Vec<(OsString, OsString)>,
+    /// Ex commands run before the config (`--cmd`), e.g. settings from
+    /// `config.toml` that the bundled config reads.
+    pub pre_commands: Vec<String>,
 }
 
 /// `NVIM_APPNAME` given to the child: Neovim then keeps its state, shada,
@@ -49,12 +52,17 @@ impl SpawnOptions {
             init: init.into(),
             file: None,
             env: Vec::new(),
+            pre_commands: Vec::new(),
         }
     }
 
     fn command(&self) -> Command {
         let mut command = Command::new(&self.program);
-        command.arg("--embed").arg("-u").arg(&self.init);
+        command.arg("--embed");
+        for pre in &self.pre_commands {
+            command.arg("--cmd").arg(pre);
+        }
+        command.arg("-u").arg(&self.init);
         if let Some(file) = &self.file {
             command.arg("--").arg(file);
         }

@@ -1,7 +1,7 @@
 //! Main application window.
 
-use gtk::glib;
 use gtk::prelude::*;
+use gtk::{gdk, gio, glib};
 
 use super::dialogs;
 use super::grid_view::GridView;
@@ -51,6 +51,22 @@ impl MainWindow {
             .child(&overlay)
             .build();
 
+        let headerbar = build_headerbar(&vm);
+        window.set_titlebar(Some(&headerbar));
+        // The headerbar is hidden in fullscreen (F1.R7).
+        vm.bind_property("fullscreen", &headerbar, "visible")
+            .sync_create()
+            .invert_boolean()
+            .build();
+        install_actions(&window, targets);
+        accept_dropped_files(&window, &vm);
+        handle_close(&window, &vm);
+        window.connect_is_active_notify(glib::clone!(
+            #[weak]
+            editor_vm,
+            move |window| editor_vm.focus_changed(window.is_active())
+        ));
+
         vm.bind_property("title", &window, "title")
             .sync_create()
             .build();
@@ -93,6 +109,175 @@ impl MainWindow {
         self.window.present();
         self.editor.grab_focus();
     }
+}
+
+/// Title, preview toggle and menu (F1.R7). No keyboard accelerators: the
+/// GUI shortcuts are Neovim mappings, so they respect the mode (D8).
+fn build_headerbar(vm: &AppViewModel) -> gtk::HeaderBar {
+    let headerbar = gtk::HeaderBar::new();
+
+    let preview = gtk::ToggleButton::builder()
+        .icon_name("view-dual-symbolic")
+        .tooltip_text("Preview (Ctrl+P)")
+        .focus_on_click(false)
+        .build();
+    vm.bind_property("preview-visible", &preview, "active")
+        .sync_create()
+        .bidirectional()
+        .build();
+    headerbar.pack_start(&preview);
+
+    let themes = gio::Menu::new();
+    for name in crate::model::theme::ThemeChoice::names() {
+        let label = theme_label(&name);
+        themes.append(Some(&label), Some(&format!("win.theme::{name}")));
+    }
+    let menu = gio::Menu::new();
+    menu.append(Some("Open…"), Some("win.open"));
+    menu.append(Some("Export PDF"), Some("win.export-pdf"));
+    menu.append_submenu(Some("Theme"), &themes);
+    menu.append(Some("About RingMD"), Some("win.about"));
+    let menu_button = gtk::MenuButton::builder()
+        .icon_name("open-menu-symbolic")
+        .menu_model(&menu)
+        .tooltip_text("Menu")
+        .focus_on_click(false)
+        .build();
+    headerbar.pack_end(&menu_button);
+    headerbar
+}
+
+/// `dark-medium` → `Dark medium`, `system-soft` → `System (soft)`.
+fn theme_label(name: &str) -> String {
+    match name {
+        "system" => "Follow system".to_owned(),
+        _ => match name.strip_prefix("system-") {
+            Some(contrast) => format!("Follow system ({contrast})"),
+            None => {
+                let mut label = name.replacen('-', " ", 1);
+                if let Some(first) = label.get_mut(0..1) {
+                    first.make_ascii_uppercase();
+                }
+                label
+            }
+        },
+    }
+}
+
+/// Window actions behind the menu; each calls a ViewModel command.
+fn install_actions(window: &gtk::ApplicationWindow, targets: &Targets) {
+    let open = gio::SimpleAction::new("open", None);
+    open.connect_activate(glib::clone!(
+        #[weak(rename_to = app)]
+        targets.app,
+        move |_, _| {
+            glib::spawn_future_local(async move { app.open_with_chooser().await });
+        }
+    ));
+
+    let export_pdf = gio::SimpleAction::new("export-pdf", None);
+    export_pdf.connect_activate(glib::clone!(
+        #[weak(rename_to = app)]
+        targets.app,
+        #[weak(rename_to = export)]
+        targets.export,
+        move |_, _| {
+            let document = app.document().path().map(Into::into);
+            glib::spawn_future_local(async move { export.export(None, document).await });
+        }
+    ));
+
+    let theme_vm = &targets.theme;
+    let theme = gio::SimpleAction::new_stateful(
+        "theme",
+        Some(glib::VariantTy::STRING),
+        &theme_vm.choice().name().to_variant(),
+    );
+    theme.connect_activate(glib::clone!(
+        #[weak]
+        theme_vm,
+        move |_, target| {
+            if let Some(choice) = target
+                .and_then(|v| v.get::<String>())
+                .and_then(|name| name.parse().ok())
+            {
+                theme_vm.set_choice(choice);
+            }
+        }
+    ));
+    theme_vm.connect_variant_notify(glib::clone!(
+        #[weak]
+        theme,
+        move |vm| theme.set_state(&vm.choice().name().to_variant())
+    ));
+
+    let about = gio::SimpleAction::new("about", None);
+    about.connect_activate(glib::clone!(
+        #[weak]
+        window,
+        move |_, _| dialogs::show_about(Some(&window))
+    ));
+
+    for action in [open, export_pdf, theme, about] {
+        window.add_action(&action);
+    }
+}
+
+/// Dropping files on the window opens them (F7.R4).
+fn accept_dropped_files(window: &gtk::ApplicationWindow, vm: &AppViewModel) {
+    let target = gtk::DropTarget::new(gdk::FileList::static_type(), gdk::DragAction::COPY);
+    target.connect_drop(glib::clone!(
+        #[weak]
+        vm,
+        #[upgrade_or]
+        false,
+        move |_, value, _, _| {
+            let Ok(list) = value.get::<gdk::FileList>() else {
+                return false;
+            };
+            let paths: Vec<_> = list.files().iter().filter_map(|f| f.path()).collect();
+            let paths = crate::viewmodel::files::droppable(&paths);
+            if paths.is_empty() {
+                return false;
+            }
+            glib::spawn_future_local(async move {
+                for path in paths {
+                    vm.open_file(&path).await;
+                }
+            });
+            true
+        }
+    ));
+    window.add_controller(target);
+}
+
+/// Closing goes through Neovim (F1.R5): the window closes only once
+/// Neovim has quit, after asking about unsaved changes.
+fn handle_close(window: &gtk::ApplicationWindow, vm: &AppViewModel) {
+    window.connect_close_request(glib::clone!(
+        #[weak]
+        vm,
+        #[upgrade_or]
+        glib::Propagation::Proceed,
+        move |_| {
+            if vm.ready_to_close() {
+                return glib::Propagation::Proceed;
+            }
+            glib::spawn_future_local(async move { vm.request_close().await });
+            glib::Propagation::Stop
+        }
+    ));
+    vm.connect_confirm_close(glib::clone!(
+        #[weak]
+        window,
+        move |vm, unsaved| {
+            let (vm, unsaved) = (vm.clone(), unsaved.to_owned());
+            glib::spawn_future_local(async move {
+                let choice = dialogs::confirm_close(Some(&window), &unsaved).await;
+                vm.resolve_close(choice).await;
+            });
+        }
+    ));
 }
 
 /// Window chrome colours from the theme (F5.R2), live on every change.
@@ -179,4 +364,17 @@ fn show_export_results(toast: &Toast, export: &ExportViewModel) {
     });
     let toast = toast.clone();
     export.connect_finished(move |_, ok, message| toast.show(message, !ok));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn theme_labels() {
+        assert_eq!(theme_label("dark-medium"), "Dark medium");
+        assert_eq!(theme_label("light-soft"), "Light soft");
+        assert_eq!(theme_label("system"), "Follow system");
+        assert_eq!(theme_label("system-hard"), "Follow system (hard)");
+    }
 }

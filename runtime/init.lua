@@ -274,9 +274,80 @@ end, {
   end,
 })
 
--- GUI shortcuts, Normal mode only (D8); other modes keep Neovim's meaning.
+---------------------------------------------------------------------------
+-- Files (F7) and GUI shortcuts (§5)
+---------------------------------------------------------------------------
+
+-- Helpers the GUI calls with nvim_exec_lua.
+_G.ringmd = {}
+
+-- Modified listed buffers: { {buf = n, name = 'notes.md' or ''}, ... }.
+function ringmd.unsaved()
+  local out = {}
+  for _, buf in ipairs(api.nvim_list_bufs()) do
+    if vim.bo[buf].buflisted and vim.bo[buf].modified then
+      table.insert(out, { buf = buf, name = api.nvim_buf_get_name(buf) })
+    end
+  end
+  return out
+end
+
+-- Write `buf`, to `path` if given (Save As; the GUI already asked about
+-- overwriting). Returns an error message, or nil.
+function ringmd.save(buf, path)
+  local ok, err = pcall(api.nvim_buf_call, buf, function()
+    if path then
+      vim.cmd('saveas! ' .. vim.fn.fnameescape(path))
+    else
+      vim.cmd('write')
+    end
+  end)
+  return not ok and tostring(err) or nil
+end
+
+-- Open `path` in the current window.
+function ringmd.open(path)
+  local ok, err = pcall(vim.cmd, 'edit ' .. vim.fn.fnameescape(path))
+  return not ok and tostring(err) or nil
+end
+
+-- Ctrl+S: write, or ask the GUI for a name when the buffer has none.
+local function save_current()
+  if api.nvim_buf_get_name(0) == '' then
+    notify_gui('ringmd_save_as')
+  else
+    local err = ringmd.save(0)
+    if err then
+      api.nvim_err_writeln(err)
+    end
+  end
+end
+
+-- Normal mode only (D8): other modes keep Neovim's meaning.
 vim.keymap.set('n', '<C-p>', '<Cmd>Preview<CR>', { desc = 'Toggle the preview' })
 vim.keymap.set('n', '<C-e>', '<Cmd>ExportPdf<CR>', { desc = 'Export to PDF' })
+vim.keymap.set('n', '<C-o>', function()
+  notify_gui('ringmd_open')
+end, { desc = 'Open a file' })
+-- Every mode (§5).
+local all_modes = { 'n', 'i', 'v', 's', 'x', 'o', 'c', 't' }
+vim.keymap.set(all_modes, '<C-s>', save_current, { desc = 'Save' })
+vim.keymap.set(all_modes, '<F11>', function()
+  notify_gui('ringmd_fullscreen')
+end, { desc = 'Toggle fullscreen' })
+
+-- Files changed on disk (F7.R3): check when RingMD regains focus or a
+-- buffer is entered; 'autoread' reloads unmodified buffers and Neovim
+-- asks about modified ones as usual.
+vim.opt.autoread = true
+api.nvim_create_autocmd({ 'FocusGained', 'BufEnter' }, {
+  group = group,
+  callback = function()
+    if vim.fn.getcmdwintype() == '' and api.nvim_get_mode().mode ~= 'c' then
+      vim.cmd('silent! checktime')
+    end
+  end,
+})
 
 ---------------------------------------------------------------------------
 -- Your tweaks (F8.R4): ~/.config/ringmd/init.lua, after everything above.

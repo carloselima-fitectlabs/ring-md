@@ -16,6 +16,12 @@ pub enum GuiCommand {
     ExportPdf { path: Option<PathBuf> },
     /// `:Theme <variant>` or `:Theme system[-contrast]`
     SetTheme(ThemeChoice),
+    /// `Ctrl+O`: choose a file to open.
+    Open,
+    /// `Ctrl+S` on an unnamed buffer: choose where to save it.
+    SaveAs,
+    /// `F11`
+    ToggleFullscreen,
 }
 
 impl GuiCommand {
@@ -32,6 +38,9 @@ impl GuiCommand {
                 Some(Self::ExportPdf { path })
             }
             "ringmd_theme" => params.first()?.as_str()?.parse().ok().map(Self::SetTheme),
+            "ringmd_open" => Some(Self::Open),
+            "ringmd_save_as" => Some(Self::SaveAs),
+            "ringmd_fullscreen" => Some(Self::ToggleFullscreen),
             _ => None,
         }
     }
@@ -73,6 +82,17 @@ mod tests {
                 crate::model::theme::Contrast::Medium
             )))
         );
+    }
+
+    #[test]
+    fn decodes_file_commands() {
+        for (method, command) in [
+            ("ringmd_open", GuiCommand::Open),
+            ("ringmd_save_as", GuiCommand::SaveAs),
+            ("ringmd_fullscreen", GuiCommand::ToggleFullscreen),
+        ] {
+            assert_eq!(GuiCommand::from_notification(method, &[]), Some(command));
+        }
     }
 
     #[test]

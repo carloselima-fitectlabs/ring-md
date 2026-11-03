@@ -6,6 +6,7 @@
 pub mod app;
 pub mod editor;
 pub mod export;
+pub mod files;
 pub mod preview;
 pub mod session;
 pub mod theme;

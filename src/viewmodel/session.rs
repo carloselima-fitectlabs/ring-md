@@ -10,7 +10,7 @@ use super::{
     ThemeViewModel,
 };
 use crate::model::nvim::{GuiCommand, NvimApi, NvimEvent, NvimSession, SpawnOptions};
-use crate::services::ClipboardService;
+use crate::services::{ClipboardService, FileDialogService};
 
 /// The ViewModels Neovim's events are routed to.
 #[derive(Debug, Clone)]
@@ -39,6 +39,7 @@ pub fn start(
     targets: &Targets,
     options: &SpawnOptions,
     clipboard: Rc<dyn ClipboardService>,
+    dialogs: Rc<dyn FileDialogService>,
 ) -> EditorViewModel {
     let app = &targets.app;
     let (session, events) = match NvimSession::spawn(options) {
@@ -57,6 +58,7 @@ pub fn start(
     let nvim: Rc<dyn NvimApi> = Rc::new(session);
     targets.theme.attach_neovim(nvim.clone());
     targets.export.attach_neovim(nvim.clone());
+    targets.app.set_file_services(nvim.clone(), dialogs);
     let editor = EditorViewModel::new(EditorServices {
         nvim: nvim.clone(),
         clipboard,
@@ -130,6 +132,17 @@ fn run_command(vms: &ViewModels, command: GuiCommand) {
     match command {
         GuiCommand::TogglePreview => vms.app.toggle_preview(),
         GuiCommand::SetTheme(choice) => vms.theme.set_choice(choice),
+        GuiCommand::ToggleFullscreen => vms.app.toggle_fullscreen(),
+        GuiCommand::Open => {
+            let app = vms.app.clone();
+            glib::spawn_future_local(async move { app.open_with_chooser().await });
+        }
+        GuiCommand::SaveAs => {
+            let app = vms.app.clone();
+            glib::spawn_future_local(async move {
+                app.save_as().await;
+            });
+        }
         GuiCommand::ExportPdf { path } => {
             let export = vms.export.clone();
             let document = vms.app.document().path().map(Into::into);

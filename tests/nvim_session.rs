@@ -594,3 +594,157 @@ fn theme_highlights_apply_in_neovim() {
         assert_eq!(heading, "markdownH1".into());
     });
 }
+
+/// Call a `ringmd.*` helper from the bundled config.
+async fn helper(h: &Harness, call: &str) -> Value {
+    h.nvim
+        .request(
+            "nvim_exec_lua",
+            vec![format!("return ringmd.{call}").into(), Value::Array(vec![])],
+        )
+        .await
+        .unwrap()
+}
+
+#[test]
+fn file_helpers_save_and_open() {
+    let home = Home::new("file_helpers_save_and_open");
+    let a = home.write("a.md", "one\n");
+    let b = home.write("b.md", "two\n");
+    let new = home.path("new.md");
+    let mut h = Harness::start_in(home, Some(&a));
+    block_on(async {
+        h.attach_ready().await;
+        assert_eq!(helper(&h, "unsaved()").await, Value::Array(vec![]));
+
+        // Modify a.md and an unnamed buffer: both are reported.
+        h.nvim
+            .request("nvim_command", vec!["normal! Aplus".into()])
+            .await
+            .unwrap();
+        h.nvim
+            .request("nvim_command", vec!["enew".into()])
+            .await
+            .unwrap();
+        h.nvim
+            .request("nvim_command", vec!["normal! itext".into()])
+            .await
+            .unwrap();
+        let unsaved = helper(&h, "unsaved()").await;
+        let names: Vec<&str> = unsaved
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| {
+                item.as_map()
+                    .unwrap()
+                    .iter()
+                    .find(|(k, _)| k.as_str() == Some("name"))
+                    .unwrap()
+                    .1
+                    .as_str()
+                    .unwrap()
+            })
+            .collect();
+        assert_eq!(names.len(), 2, "{unsaved}");
+        assert!(names[0].ends_with("a.md"), "{names:?}");
+        assert_eq!(names[1], "");
+
+        // Save As for the unnamed buffer, plain write for a.md.
+        let script = format!("return ringmd.save(0, '{}')", new.display());
+        let err = h
+            .nvim
+            .request("nvim_exec_lua", vec![script.into(), Value::Array(vec![])])
+            .await
+            .unwrap();
+        assert_eq!(err, Value::Nil);
+        assert_eq!(std::fs::read_to_string(&new).unwrap(), "text\n");
+        let err = h
+            .nvim
+            .request(
+                "nvim_exec_lua",
+                vec![
+                    "return ringmd.save(vim.fn.bufnr(select(1, ...)))".into(),
+                    Value::Array(vec![a.to_str().unwrap().into()]),
+                ],
+            )
+            .await
+            .unwrap();
+        assert_eq!(err, Value::Nil);
+        assert_eq!(std::fs::read_to_string(&a).unwrap(), "oneplus\n");
+        assert_eq!(helper(&h, "unsaved()").await, Value::Array(vec![]));
+
+        // Open, and report errors instead of raising them.
+        let script = format!("return ringmd.open('{}')", b.display());
+        assert_eq!(
+            h.nvim
+                .request("nvim_exec_lua", vec![script.into(), Value::Array(vec![])])
+                .await
+                .unwrap(),
+            Value::Nil
+        );
+        assert_eq!(h.eval("getline(1)").await, "two".into());
+        let err = helper(&h, "save(0, '/nonexistent-dir/x.md')").await;
+        assert!(err.as_str().is_some_and(|e| e.contains("E")), "{err}");
+    });
+}
+
+#[test]
+fn file_shortcuts_reach_the_gui() {
+    let home = Home::new("file_shortcuts_reach_the_gui");
+    let named = home.write("named.md", "x\n");
+    let mut h = Harness::start_in(home, Some(&named));
+    block_on(async {
+        h.attach_ready().await;
+        // Ctrl+S on a named buffer writes it without asking the GUI.
+        h.nvim.input("ay<Esc><C-s>");
+        h.wait_for("named buffer saved", |event, _| {
+            let state = notification(event, "ringmd_buffer")?.first()?.as_map()?;
+            let modified = state
+                .iter()
+                .find(|(k, _)| k.as_str() == Some("modified"))?
+                .1
+                .as_bool()?;
+            (!modified && std::fs::read_to_string(&named).ok()? == "xy\n").then_some(())
+        })
+        .await;
+
+        // Insert-mode Ctrl+O keeps Neovim's meaning; Normal-mode opens.
+        h.nvim.input(":enew<CR>i<C-o><Esc><C-s>");
+        assert_eq!(
+            h.next_command("Ctrl+S on unnamed").await,
+            GuiCommand::SaveAs
+        );
+        // Still in Insert mode (Insert-mode Ctrl+O consumed the Esc).
+        assert_eq!(h.eval("mode()").await, "i".into());
+        h.nvim.input("<Esc><C-o>");
+        assert_eq!(h.next_command("Ctrl+O").await, GuiCommand::Open);
+        h.nvim.input("i<F11>");
+        assert_eq!(
+            h.next_command("F11 in insert mode").await,
+            GuiCommand::ToggleFullscreen
+        );
+    });
+}
+
+#[test]
+fn preview_debounce_comes_from_the_gui() {
+    let home = Home::new("preview_debounce_comes_from_the_gui");
+    let mut options = SpawnOptions::new(runtime::init_lua());
+    options.env = home.xdg_env();
+    options
+        .pre_commands
+        .push("let g:ringmd_preview_debounce = 120".into());
+    let (nvim, events) = NvimSession::spawn(&options).unwrap();
+    let mut h = Harness {
+        _home: home,
+        nvim,
+        events,
+        grid: Grid::new(0, 0),
+        log: Vec::new(),
+    };
+    block_on(async {
+        h.attach_ready().await;
+        assert_eq!(h.eval("g:ringmd_preview_debounce").await, 120.into());
+    });
+}

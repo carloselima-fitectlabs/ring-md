@@ -381,7 +381,7 @@ pass and it has tests where testable.
 
 Legend: **S** ≈ ½ day · **M** ≈ 1–2 days · **L** ≈ 3–5 days
 
-Progress: **M0–M5 done** (plus T6.1) · M6–M7 not started. Known gap: F6.R5 (see M5).
+Progress: **M0–M6 done** · M7 not started. Known gap: F6.R5 (see M5).
 
 ### M0 — Project foundation ✅
 
@@ -455,7 +455,9 @@ Progress: **M0–M5 done** (plus T6.1) · M6–M7 not started. Known gap: F6.R5 
 | T5.4 | **ViewModel** `ExportViewModel`: async export, `is_exporting` + result properties; View shows toast | F6.R6 | T5.3 | S |
 | T5.5 | Golden test: export fixture doc, assert valid PDF, page count, white background, link annotations | F6-AC1–AC3 | T5.2 | M |
 
-### M6 — Files & configuration
+### M6 — Files & configuration ✅
+
+> T6.6 is met by making the GUI shortcuts Neovim mappings in the bundled config (`nmap` for `Ctrl+O/E/P`, all modes for `Ctrl+S`/`F11`), so the mode decides and nothing is intercepted in the View. `Ctrl+=/-/0` stay GUI-side in `EditorViewModel`.
 
 | Task | Description | Reqs | Deps | Size |
 |------|-------------|------|------|------|

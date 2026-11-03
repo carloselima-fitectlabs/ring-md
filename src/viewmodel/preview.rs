@@ -43,6 +43,10 @@ mod imp {
         #[property(get, set = Self::set_background, explicit_notify)]
         pub(super) background: RefCell<String>,
 
+        /// Whether the preview follows the editor cursor (`preview.sync_scroll`).
+        #[property(get, set, default = true)]
+        pub(super) sync_scroll: Cell<bool>,
+
         /// 1-based source line the preview should keep in view (F4.R4).
         #[property(get)]
         pub(super) scroll_target_line: Cell<u32>,
@@ -64,6 +68,7 @@ mod imp {
                 base_uri: RefCell::default(),
                 theme_css: RefCell::default(),
                 background: RefCell::new("#282828".into()),
+                sync_scroll: Cell::new(true),
                 scroll_target_line: Cell::new(1),
                 active: Cell::new(true),
                 pending: RefCell::default(),
@@ -147,6 +152,9 @@ impl PreviewViewModel {
 
     /// Command: the editor cursor moved to `line` (1-based).
     pub fn set_cursor_line(&self, line: u32) {
+        if !self.imp().sync_scroll.get() {
+            return;
+        }
         let line = line.max(1);
         if self.imp().scroll_target_line.replace(line) != line {
             self.notify_scroll_target_line();
@@ -315,6 +323,14 @@ mod tests {
         vm.set_cursor_line(0);
         assert_eq!(vm.scroll_target_line(), 1);
         assert_eq!(count.get(), 2);
+    }
+
+    #[test]
+    fn sync_scroll_can_be_turned_off() {
+        let (vm, _) = setup();
+        vm.set_sync_scroll(false);
+        vm.set_cursor_line(40);
+        assert_eq!(vm.scroll_target_line(), 1);
     }
 
     #[test]

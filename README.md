@@ -3,9 +3,9 @@
 A graphical, Linux-first Markdown editor powered by an embedded Neovim engine,
 with live preview, Gruvbox themes and PDF export.
 
-> **Status:** early development. The embedded Neovim editor, its bundled
-> config, the live preview, Gruvbox themes and PDF export work (M0–M5);
-> files & configuration (M6) are next.
+> **Status:** early development. Editor, bundled config, live preview,
+> Gruvbox themes, PDF export, files and configuration work (M0–M6);
+> packaging (M7) is next.
 > See [docs/SPEC.md](docs/SPEC.md) for the specification and task breakdown.
 
 ## Building
@@ -54,8 +54,23 @@ page_size = "A4"     # or "Letter"
 margin_mm = 20
 ```
 
-Invalid values are logged and replaced by their defaults. `theme` and
-`pdf.*` take effect so far; the other keys are wired up in M6.
+Invalid values are logged and replaced by their defaults. Switching the
+theme, toggling the preview and zooming the font are saved back to the
+file, keeping your comments.
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+P` | Toggle the preview (Normal mode) |
+| `Ctrl+E` | Export PDF (Normal mode) |
+| `Ctrl+O` | Open a file (Normal mode) |
+| `Ctrl+S` | Save, or Save As for an unnamed buffer (all modes) |
+| `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | Font size up / down / reset |
+| `F11` | Fullscreen |
+
+In other modes `Ctrl+O/E/P` keep their Neovim meaning. Closing the window
+with unsaved changes asks to Save, Discard or Cancel; files dropped on the
+window open in the editor, and files changed on disk are reloaded when
+RingMD regains focus (`autoread`).
 
 `:ExportPdf [path]` or `Ctrl+E` (Normal mode) writes a plain, printable PDF
 (white page, serif text) next to the file, or where you say; an unnamed

@@ -7,13 +7,13 @@ use gtk::{gdk, gio, glib};
 
 use crate::cli::Cli;
 use crate::model::Document;
-use crate::model::config::{self, Config};
+use crate::model::config::{self, Config, Setting};
 use crate::model::nvim::{SpawnOptions, runtime};
 use crate::services::gtk::{
     GtkClipboardService, GtkFileDialogService, GtkLinkService, SystemColorScheme,
 };
 use crate::services::webkit::WebKitPdfService;
-use crate::services::{FileSettingsStore, PdfOptions};
+use crate::services::{FileSettingsStore, PdfOptions, SettingsStore};
 use crate::view::MainWindow;
 use crate::viewmodel::session::{self, Targets};
 use crate::viewmodel::{
@@ -40,6 +40,10 @@ pub fn run(cli: Cli) -> glib::ExitCode {
 
     let mut options = SpawnOptions::new(runtime::init_lua());
     options.file = cli.file.clone();
+    options.pre_commands.push(format!(
+        "let g:ringmd_preview_debounce = {}",
+        config.preview_debounce_ms
+    ));
     let document = cli.file.map(Document::with_path).unwrap_or_default();
     app.connect_activate(move |app| {
         tracing::debug!(?document, "activating");
@@ -48,12 +52,18 @@ pub fn run(cli: Cli) -> glib::ExitCode {
             return;
         };
         let vm = AppViewModel::new(document.clone());
+        vm.set_preview_visible(config.preview_visible);
+        let settings: Rc<dyn SettingsStore> = Rc::new(FileSettingsStore::new(config_path.clone()));
+        // Remember toggling the preview (F9.R4).
+        vm.connect_preview_visible_notify(glib::clone!(
+            #[strong]
+            settings,
+            move |vm| settings.save(&Setting::PreviewVisible(vm.preview_visible()))
+        ));
         let clipboard = Rc::new(GtkClipboardService::new(&display));
         let preview = PreviewViewModel::new(Rc::new(GtkLinkService::default()));
-        let theme = ThemeViewModel::new(
-            config.theme,
-            Rc::new(FileSettingsStore::new(config_path.clone())),
-        );
+        preview.set_sync_scroll(config.preview_sync_scroll);
+        let theme = ThemeViewModel::new(config.theme, settings.clone());
         theme
             .bind_property("preview-css", &preview, "theme-css")
             .sync_create()
@@ -82,7 +92,14 @@ pub fn run(cli: Cli) -> glib::ExitCode {
             theme,
             export,
         };
-        let editor = session::start(&targets, &options, clipboard);
+        let editor = session::start(&targets, &options, clipboard, dialogs.clone());
+        editor.configure_font(&config.font, config.font_size.round() as u32);
+        // Remember font zoom (F9.R4).
+        editor.connect_font_size_notify(glib::clone!(
+            #[strong]
+            settings,
+            move |editor| settings.save(&Setting::FontSize(f64::from(editor.font_size())))
+        ));
         let window = MainWindow::new(app, &targets, &editor);
         dialogs.set_parent(window.window());
         window.present();
