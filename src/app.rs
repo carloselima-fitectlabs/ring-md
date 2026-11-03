@@ -1,12 +1,16 @@
 //! GTK application lifecycle (F1.R1).
 
+use std::rc::Rc;
+
 use gtk::prelude::*;
-use gtk::{gio, glib};
+use gtk::{gdk, gio, glib};
 
 use crate::cli::Cli;
 use crate::model::Document;
+use crate::model::nvim::{SpawnOptions, runtime};
+use crate::services::gtk::GtkClipboardService;
 use crate::view::MainWindow;
-use crate::viewmodel::AppViewModel;
+use crate::viewmodel::{AppViewModel, session};
 
 /// Application ID. Provisional until the Flatpak ID is chosen (T7.2).
 pub const APP_ID: &str = "io.github.ringmd.RingMD";
@@ -20,11 +24,19 @@ pub fn run(cli: Cli) -> glib::ExitCode {
         .flags(gio::ApplicationFlags::NON_UNIQUE)
         .build();
 
+    let mut options = SpawnOptions::new(runtime::init_lua());
+    options.file = cli.file.clone();
     let document = cli.file.map(Document::with_path).unwrap_or_default();
     app.connect_activate(move |app| {
         tracing::debug!(?document, "activating");
+        let Some(display) = gdk::Display::default() else {
+            tracing::error!("no display available");
+            return;
+        };
         let vm = AppViewModel::new(document.clone());
-        MainWindow::new(app, vm).present();
+        let clipboard = Rc::new(GtkClipboardService::new(&display));
+        let editor = session::start(&vm, &options, clipboard);
+        MainWindow::new(app, vm, &editor).present();
     });
 
     // Arguments were already parsed by clap; don't let GTK parse them again.

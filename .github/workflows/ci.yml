@@ -27,6 +27,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libgtk-4-dev xvfb
 
+      # Ubuntu 24.04 ships Neovim 0.9; RingMD needs 0.10+ (F2.R3).
+      - name: Install Neovim
+        env:
+          NVIM_VERSION: v0.10.4
+        run: |
+          curl -fsSL "https://github.com/neovim/neovim/releases/download/${NVIM_VERSION}/nvim-linux-x86_64.tar.gz" \
+            | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/nvim-linux-x86_64/bin" >> "$GITHUB_PATH"
+
+      - name: Check Neovim
+        run: nvim --version | head -1
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
