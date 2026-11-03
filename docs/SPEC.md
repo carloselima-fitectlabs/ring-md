@@ -1,6 +1,6 @@
 # RingMD — Specification
 
-> Status: **Draft v0.1** · Process: Spec-Driven Development (SDD)
+> Status: **Draft v0.2** · Process: Spec-Driven Development (SDD)
 >
 > This document is the source of truth. Code is written to satisfy the
 > requirements and acceptance criteria below. Any change in behaviour starts
@@ -46,6 +46,7 @@ the editor, uses the **Gruvbox** palette throughout, and exports documents to a
 | D4 | PDF output is **plain white and printable**, *not* themed |
 | D5 | Name: **RingMD**. Primary distribution: **Flatpak** |
 | D6 | Stack: Rust · GTK4 (gtk-rs) · WebKitGTK 6 · comrak · nvim-rs (or equivalent) |
+| D7 | Architecture pattern: **MVVM** (Model–View–ViewModel), see §3.2 |
 
 ---
 
@@ -63,6 +64,8 @@ the editor, uses the **Gruvbox** palette throughout, and exports documents to a
 
 ## 3. Architecture
 
+Runtime data flow (the layering of these parts is defined in §3.1):
+
 ```
 ┌──────────────────────── RingMD (GTK4 Application) ────────────────────────┐
 │                                                                           │
@@ -78,25 +81,80 @@ the editor, uses the **Gruvbox** palette throughout, and exports documents to a
 │  │ rpcnotify ← :Preview :ExportPdf :Theme  │  │    MD → HTML + sourcepos│  │
 │  └─────────────────────────────────────────┘  └─────────────────────────┘  │
 │                                                                           │
-│  ThemeManager (Gruvbox palette → nvim highlights, GTK CSS, preview CSS)    │
+│  Theme (Gruvbox palette → nvim highlights, GTK CSS, preview CSS)    │
 │  PdfExporter (offscreen WebView + print stylesheet → PDF file)            │
 │  Config (~/.config/ringmd/config.toml)                                    │
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.1 Modules
+### 3.1 MVVM layers
 
-| Module | Responsibility |
-|--------|----------------|
-| `app` | GTK application lifecycle, window, CLI args |
-| `nvim` | Spawning Neovim, RPC client, UI event decoding, input encoding |
-| `grid` | Grid model (cells, highlights, cursor) and the drawing widget |
-| `render` | Markdown → HTML, source-line mapping |
-| `preview` | WebView setup, incremental updates, scroll sync |
-| `theme` | Gruvbox palettes, variant switching, CSS/highlight generation |
-| `pdf` | PDF export pipeline and print stylesheet |
-| `config` | Loading/saving user settings |
-| `runtime/` | Bundled `init.lua`, Lua glue, colorscheme (shipped with the app) |
+The code is split into three layers. Dependencies only point downward:
+**View → ViewModel → Model**.
+
+```
+┌──────────────────────────── View (GTK4 widgets) ────────────────────────────┐
+│ MainWindow · GridView · PreviewView · Dialogs (unsaved, file chooser, error) │
+│ - draws state, forwards user input as ViewModel method calls                 │
+│ - binds to ViewModel properties (GObject property bindings / notify::)      │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │ properties ▲  commands ▼
+┌──────────────────────────── ViewModel (GObject) ────────────────────────────┐
+│ AppViewModel · EditorViewModel · PreviewViewModel · ThemeViewModel ·         │
+│ ExportViewModel                                                              │
+│ - exposes observable state (properties) and commands (methods)              │
+│ - no GTK widget types, no drawing, no direct I/O                            │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │ calls ▼  events ▲
+┌──────────────────────────── Model (plain Rust) ─────────────────────────────┐
+│ NvimSession · Grid · Document · MarkdownRenderer · Palette/Theme ·           │
+│ PdfExporter (service trait) · Config                                         │
+│ - domain logic and services, no GTK dependency (except behind traits)       │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+| Layer | Component | Responsibility |
+|-------|-----------|----------------|
+| Model | `NvimSession` | Spawning Neovim, RPC client, decoding redraw events, encoding input |
+| Model | `Grid` | Cells, highlight table, cursor, mode info — updated from redraw events |
+| Model | `Document` | Current buffer text, file path, modified flag (mirrored from Neovim) |
+| Model | `MarkdownRenderer` | Markdown → HTML with source-line mapping, sanitization |
+| Model | `Palette` / `Theme` | Gruvbox variants; generates nvim highlights, GTK CSS, preview CSS |
+| Model | `PdfExporter` | Trait + WebKit implementation: HTML + print CSS → PDF file |
+| Model | `Config` | Load/save/validate `config.toml` |
+| ViewModel | `AppViewModel` | Window title, preview visibility, fullscreen, quit/unsaved flow, error messages |
+| ViewModel | `EditorViewModel` | Exposes `Grid` snapshots + damage, cursor shape, font; commands: `key_pressed`, `mouse`, `resize`, `zoom` |
+| ViewModel | `PreviewViewModel` | Debounced HTML, `scroll_target_line`, base URI; commands: `link_activated` |
+| ViewModel | `ThemeViewModel` | `variant`, generated CSS strings; command: `set_variant` |
+| ViewModel | `ExportViewModel` | `is_exporting`, last result; command: `export(path)` |
+| View | `MainWindow` | Layout (`GtkPaned`), headerbar, shortcuts, toasts |
+| View | `GridView` | `GtkDrawingArea` drawing the grid via Pango/Cairo |
+| View | `PreviewView` | `WebKitWebView`, applies HTML patches and scroll targets |
+| View | `Dialogs` | Unsaved changes, file chooser, error dialog |
+| — | `runtime/` | Bundled `init.lua` and Lua glue (shipped with the app) |
+
+### 3.2 MVVM rules
+
+| ID | Rule |
+|----|------|
+| A1 | Views hold a reference to their ViewModel; ViewModels never reference Views. |
+| A2 | ViewModels are GObject subclasses; state is exposed as GObject properties so Views can use `bind_property` / `notify::`. |
+| A3 | Views contain no logic beyond drawing, layout and forwarding input. Any decision (e.g. "should Ctrl+P toggle the preview in this mode?") lives in a ViewModel. |
+| A4 | Models have no dependency on GTK widgets. Platform services (PDF printing, clipboard, file chooser) are reached through traits so ViewModels can be tested with fakes. |
+| A5 | Neovim callbacks (`rpcnotify` for `:Preview`, `:Theme`, `:ExportPdf`) arrive in the Model and are routed to ViewModel commands — the same path as GUI shortcuts. |
+| A6 | Every ViewModel has unit tests that run without a display (no `gtk::init`). |
+
+### 3.3 Source layout
+
+```
+src/
+  main.rs
+  model/      nvim/ grid.rs document.rs render.rs theme.rs pdf.rs config.rs
+  viewmodel/  app.rs editor.rs preview.rs theme.rs export.rs
+  view/       window.rs grid_view.rs preview_view.rs dialogs.rs
+runtime/      init.lua
+tests/        fixtures/ integration/
+```
 
 ---
 
@@ -307,24 +365,25 @@ Legend: **S** ≈ ½ day · **M** ≈ 1–2 days · **L** ≈ 3–5 days
 
 | Task | Description | Reqs | Deps | Size |
 |------|-------------|------|------|------|
-| T0.1 | Cargo workspace, module layout (§3.1), `rustfmt`/`clippy` config | N5 | — | S |
+| T0.1 | Cargo project, MVVM source layout (§3.3), `rustfmt`/`clippy` config | N5, A1–A6 | — | S |
 | T0.2 | GitHub Actions CI: build, test, clippy, fmt on Ubuntu with GTK4 + WebKitGTK 6 | F10.R4 | T0.1 | S |
 | T0.3 | GTK4 `Application` + empty window, CLI arg parsing (`ringmd [FILE]`) | F1.R1, F1.R2 | T0.1 | S |
 | T0.4 | Logging (`tracing`) and error-dialog helper | F2.R3, F2.R7 | T0.3 | S |
+| T0.5 | MVVM scaffolding: GObject ViewModel base pattern, `AppViewModel` skeleton, service traits (`PdfService`, `ClipboardService`, `FileDialogService`) with fakes for tests | A2, A4, A6 | T0.1 | M |
 
 ### M1 — Neovim engine in a window *(critical path)*
 
 | Task | Description | Reqs | Deps | Size |
 |------|-------------|------|------|------|
-| T1.1 | `NvimBridge`: spawn `nvim --embed -u <runtime>/init.lua`, async RPC on GLib main loop, version check | F2.R1–R3 | T0.3 | M |
-| T1.2 | Decode `redraw` events into a grid model (`grid_resize`, `grid_line`, `grid_clear`, `grid_scroll`, `grid_cursor_goto`, `hl_attr_define`, `default_colors_set`, `flush`) | F2.R1, F3.R3 | T1.1 | M |
-| T1.3 | `GridWidget`: draw cells with Pango/Cairo, text attributes, wide chars, HiDPI | F3.R1, F3.R4, F3.R6 | T1.2 | L |
+| T1.1 | **Model** `NvimSession`: spawn `nvim --embed -u <runtime>/init.lua`, async RPC on GLib main loop, version check | F2.R1–R3 | T0.3 | M |
+| T1.2 | **Model** `Grid`: decode `redraw` events into the grid (`grid_resize`, `grid_line`, `grid_clear`, `grid_scroll`, `grid_cursor_goto`, `hl_attr_define`, `default_colors_set`, `flush`) | F2.R1, F3.R3 | T1.1 | M |
+| T1.3 | **ViewModel** `EditorViewModel` (grid snapshot + damage, cursor, font properties) and **View** `GridView`: draw cells with Pango/Cairo, text attributes, wide chars, HiDPI | F3.R1, F3.R4, F3.R6 | T1.2 | L |
 | T1.4 | Cursor rendering from `mode_info_set` / `mode_change` | F3.R2 | T1.3 | S |
-| T1.5 | Keyboard input → `nvim_input` (keysym mapping, modifiers, IME via `GtkIMContext`) | F2.R4 | T1.1 | M |
-| T1.6 | Mouse input → `nvim_input_mouse` | F2.R5 | T1.3 | S |
-| T1.7 | Resize handling → `nvim_ui_try_resize` | F2.R6 | T1.3 | S |
-| T1.8 | Neovim exit/crash handling; window title from buffer name + modified flag | F2.R7, F1.R4 | T1.1 | S |
-| T1.9 | Clipboard provider (`g:clipboard` → rpcrequest → GTK clipboard) | F2.R8 | T1.1 | M |
+| T1.5 | **View→VM** keyboard input → `EditorViewModel::key_pressed` → `nvim_input` (keysym mapping, modifiers, IME via `GtkIMContext`) | F2.R4 | T1.1 | M |
+| T1.6 | **View→VM** mouse input → `EditorViewModel::mouse` → `nvim_input_mouse` | F2.R5 | T1.3 | S |
+| T1.7 | **View→VM** resize → `EditorViewModel::resize` → `nvim_ui_try_resize` | F2.R6 | T1.3 | S |
+| T1.8 | **Model** `Document` (path, modified flag); **AppViewModel** `title` property; Neovim exit/crash handling | F2.R7, F1.R4 | T1.1 | S |
+| T1.9 | Clipboard provider (`g:clipboard` → rpcrequest → `ClipboardService` → GTK clipboard) | F2.R8 | T1.1 | M |
 | T1.10 | Font config + zoom shortcuts | F3.R5 | T1.3 | S |
 | T1.11 | Performance pass: damage-region redraws, glyph cache; verify F3-AC1 and N4 | F3.R3, N4 | T1.3 | M |
 
@@ -341,24 +400,24 @@ Legend: **S** ≈ ½ day · **M** ≈ 1–2 days · **L** ≈ 3–5 days
 
 | Task | Description | Reqs | Deps | Size |
 |------|-------------|------|------|------|
-| T3.1 | `render`: comrak with GFM extensions + `sourcepos`; HTML sanitization; unit tests with fixture docs | F4.R1, F4.R8 | T0.1 | M |
+| T3.1 | **Model** `MarkdownRenderer`: comrak with GFM extensions + `sourcepos`; HTML sanitization; unit tests with fixture docs | F4.R1, F4.R8 | T0.1 | M |
 | T3.2 | Code block syntax highlighting (syntect, CSS classes) | F4.R5 | T3.1 | S |
-| T3.3 | Preview pane: WebKitGTK WebView in a `GtkPaned`, base HTML shell, scripts disabled for document content | F1.R3, F4.R8 | T0.3 | M |
-| T3.4 | `nvim_buf_attach` → debounced re-render → patch `<article>` via JS, preserving scroll | F4.R2, F4.R3 | T1.1, T3.1, T3.3 | M |
+| T3.3 | **View** `PreviewView`: WebKitGTK WebView in a `GtkPaned`, base HTML shell, scripts disabled for document content | F1.R3, F4.R8 | T0.3 | M |
+| T3.4 | **ViewModel** `PreviewViewModel`: `nvim_buf_attach` → debounced re-render → `html` property; View patches `<article>` via JS, preserving scroll | F4.R2, F4.R3 | T1.1, T3.1, T3.3, T0.5 | M |
 | T3.5 | Base URI = file directory for relative images | F4.R6 | T3.3 | S |
 | T3.6 | Open links in system browser (navigation policy) | F4.R7 | T3.3 | S |
-| T3.7 | Scroll sync: `CursorMoved` → line → nearest `data-sourcepos` element | F4.R4 | T3.4 | M |
-| T3.8 | `:Preview` / `Ctrl+P` toggle | F4.R9 | T2.2, T3.3 | S |
+| T3.7 | Scroll sync: `CursorMoved` → `PreviewViewModel.scroll_target_line` → View scrolls to nearest `data-sourcepos` element | F4.R4 | T3.4 | M |
+| T3.8 | `AppViewModel.preview_visible` + `toggle_preview` command, bound to `:Preview` and `Ctrl+P` | F4.R9 | T2.2, T3.3 | S |
 
 ### M4 — Gruvbox theme & variants
 
 | Task | Description | Reqs | Deps | Size |
 |------|-------------|------|------|------|
-| T4.1 | `theme`: palette data for 6 variants (Appendix A) + unit tests against reference hex | F5.R1, F5-AC3 | T0.1 | S |
+| T4.1 | **Model** `Palette`: data for 6 variants (Appendix A) + unit tests against reference hex | F5.R1, F5-AC3 | T0.1 | S |
 | T4.2 | Generate Neovim highlights (UI + Markdown + Treesitter groups) from palette; apply via `nvim_set_hl` | F5.R2, F5.R3 | T4.1, T1.1 | M |
 | T4.3 | Generate GTK CSS for window chrome (headerbar, paned handle, dialogs) | F5.R2 | T4.1 | S |
 | T4.4 | Generate preview CSS (typography + palette) | F5.R2 | T4.1, T3.3 | S |
-| T4.5 | `:Theme <variant>` live switch + persistence | F5.R4 | T2.2, T4.2–T4.4, T6.1 | S |
+| T4.5 | **ViewModel** `ThemeViewModel`: `variant` property, `set_variant` command; `:Theme <variant>` live switch + persistence | F5.R4 | T2.2, T4.2–T4.4, T6.1 | S |
 | T4.6 | `theme = "system"` following desktop color scheme | F5.R5 | T4.5 | S |
 
 ### M5 — PDF export
@@ -366,21 +425,21 @@ Legend: **S** ≈ ½ day · **M** ≈ 1–2 days · **L** ≈ 3–5 days
 | Task | Description | Reqs | Deps | Size |
 |------|-------------|------|------|------|
 | T5.1 | Print stylesheet: white background, black text, serif body, monospace code, page-break rules | F6.R2, F6.R4 | T3.1 | M |
-| T5.2 | Offscreen WebView + `WebKitPrintOperation` → PDF file, page size & margins | F6.R1, F6.R3, F6.R5, F6.R7 | T3.3, T5.1 | M |
+| T5.2 | `PdfService` WebKit implementation: offscreen WebView + `WebKitPrintOperation` → PDF file, page size & margins | F6.R1, F6.R3, F6.R5, F6.R7 | T3.3, T5.1 | M |
 | T5.3 | `:ExportPdf [path]` / `Ctrl+E`, default path, file chooser for unnamed buffer | F6.R1 | T2.2, T5.2 | S |
-| T5.4 | Async export + success/error notification (in-app toast or `:echo`) | F6.R6 | T5.3 | S |
+| T5.4 | **ViewModel** `ExportViewModel`: async export, `is_exporting` + result properties; View shows toast | F6.R6 | T5.3 | S |
 | T5.5 | Golden test: export fixture doc, assert valid PDF, page count, white background, link annotations | F6-AC1–AC3 | T5.2 | M |
 
 ### M6 — Files & configuration
 
 | Task | Description | Reqs | Deps | Size |
 |------|-------------|------|------|------|
-| T6.1 | `config`: TOML load/save, defaults, validation with warnings | F9.R1–R4 | T0.1 | S |
-| T6.2 | Unsaved-changes dialog on window close | F1.R5 | T1.8 | S |
+| T6.1 | **Model** `Config`: TOML load/save, defaults, validation with warnings | F9.R1–R4 | T0.1 | S |
+| T6.2 | Unsaved-changes flow in `AppViewModel`; View shows the dialog | F1.R5 | T1.8 | S |
 | T6.3 | `Ctrl+O` open / `Ctrl+S` save & Save As choosers | F7.R2 | T1.1 | S |
 | T6.4 | Drag-and-drop file open | F7.R4 | T1.1 | S |
 | T6.5 | `autoread` + external change handling in bundled config | F7.R3 | T2.1 | S |
-| T6.6 | GUI keybinding layer with mode-aware interception (§5) | §5 | T1.5 | S |
+| T6.6 | Mode-aware shortcut decisions in `EditorViewModel` (§5, rule A3) | §5 | T1.5 | S |
 | T6.7 | Fullscreen (`F11`) | §5 | T0.3 | S |
 
 ### M7 — Packaging & release
@@ -408,7 +467,8 @@ since their core logic has no GUI dependency.
 
 | Level | What |
 |-------|------|
-| Unit | `render` (Markdown fixtures → HTML snapshots), `theme` (palette values), `config` (parsing/fallbacks), redraw-event decoder (recorded event streams → expected grid) |
+| Unit (Model) | `MarkdownRenderer` (fixtures → HTML snapshots), `Palette` (hex values), `Config` (parsing/fallbacks), redraw decoder (recorded event streams → expected `Grid`) |
+| Unit (ViewModel) | Every ViewModel tested headless with fake services and a fake Neovim session: property changes, commands, debounce, unsaved-changes flow (rule A6) |
 | Integration | Headless `nvim --embed` driven by the bridge: send keys, assert buffer contents and grid state |
 | Golden | PDF export of fixture documents; preview HTML snapshots |
 | Manual | Visual checks per variant, Wayland/X11, HiDPI, IME input |
