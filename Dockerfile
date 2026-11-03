@@ -39,7 +39,7 @@ ENV RUSTUP_HOME=/usr/local/rustup \
     PATH=/usr/local/cargo/bin:${PATH}
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      build-essential pkg-config libgtk-4-dev \
+      build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev \
       xvfb xauth fonts-dejavu-core git \
  && rm -rf /var/lib/apt/lists/*
 # rustup-init straight from static.rust-lang.org, checked against its
@@ -73,7 +73,7 @@ RUN cargo build --release --locked \
 FROM base AS runtime
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      libgtk-4-1 libgl1-mesa-dri fonts-dejavu-core \
+      libgtk-4-1 libwebkitgtk-6.0-4 libgl1-mesa-dri fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/*
 # ringmd finds its Neovim config at <prefix>/share/ringmd/runtime.
 COPY --from=build /out/ /usr/local/

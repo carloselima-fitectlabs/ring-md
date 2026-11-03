@@ -5,14 +5,13 @@ use gtk::prelude::*;
 
 use super::dialogs;
 use super::grid_view::GridView;
-use crate::viewmodel::{AppViewModel, EditorViewModel};
+use super::preview_view::PreviewView;
+use crate::viewmodel::{AppViewModel, EditorViewModel, PreviewViewModel};
 
 const DEFAULT_WIDTH: i32 = 1100;
 const DEFAULT_HEIGHT: i32 = 720;
 
 /// The RingMD window: editor pane and preview pane in a resizable split (F1.R3).
-///
-/// The preview pane is a placeholder until the WebKit preview (M3) lands.
 #[derive(Debug)]
 pub struct MainWindow {
     window: gtk::ApplicationWindow,
@@ -21,9 +20,14 @@ pub struct MainWindow {
 }
 
 impl MainWindow {
-    pub fn new(app: &gtk::Application, vm: AppViewModel, editor_vm: &EditorViewModel) -> Self {
+    pub fn new(
+        app: &gtk::Application,
+        vm: AppViewModel,
+        editor_vm: &EditorViewModel,
+        preview_vm: &PreviewViewModel,
+    ) -> Self {
         let editor = GridView::new(editor_vm);
-        let preview = placeholder("Preview", "Live Markdown preview arrives in M3");
+        let preview = PreviewView::new(preview_vm).widget().clone();
 
         let split = gtk::Paned::builder()
             .orientation(gtk::Orientation::Horizontal)
@@ -47,6 +51,9 @@ impl MainWindow {
             .sync_create()
             .build();
         vm.bind_property("preview-visible", &preview, "visible")
+            .sync_create()
+            .build();
+        vm.bind_property("preview-visible", preview_vm, "active")
             .sync_create()
             .build();
         vm.bind_property("fullscreen", &window, "fullscreened")
@@ -80,22 +87,4 @@ impl MainWindow {
         self.window.present();
         self.editor.grab_focus();
     }
-}
-
-fn placeholder(title: &str, subtitle: &str) -> gtk::Widget {
-    let heading = gtk::Label::builder().label(title).build();
-    heading.add_css_class("title-1");
-    let caption = gtk::Label::builder().label(subtitle).build();
-    caption.add_css_class("dim-label");
-
-    let column = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(6)
-        .valign(gtk::Align::Center)
-        .hexpand(true)
-        .vexpand(true)
-        .build();
-    column.append(&heading);
-    column.append(&caption);
-    column.upcast()
 }

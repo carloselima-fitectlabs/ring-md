@@ -158,10 +158,10 @@ src/
   app.rs      GTK application lifecycle
   cli.rs      `ringmd [FILE]`
   logging.rs  `RINGMD_LOG` tracing setup
-  model/      document.rs grid.rs clipboard.rs theme.rs nvim/ · render.rs pdf.rs config.rs
+  model/      document.rs grid.rs clipboard.rs theme.rs render.rs preview.css nvim/ · pdf.rs config.rs
     nvim/     session.rs (process + RPC) rpc.rs redraw.rs input.rs command.rs version.rs runtime.rs fake.rs
-  viewmodel/  app.rs editor.rs session.rs (event routing) · preview.rs theme.rs export.rs
-  view/       window.rs dialogs.rs grid_view.rs · preview_view.rs
+  viewmodel/  app.rs editor.rs preview.rs session.rs (event routing) · theme.rs export.rs
+  view/       window.rs dialogs.rs grid_view.rs preview_view.rs
   services/   traits (PDF, clipboard, file dialogs) + gtk.rs (real) + fake.rs for tests
 runtime/      init.lua
 tests/        architecture.rs (layering rules) nvim_session.rs (real nvim) · fixtures/
@@ -381,7 +381,7 @@ pass and it has tests where testable.
 
 Legend: **S** ≈ ½ day · **M** ≈ 1–2 days · **L** ≈ 3–5 days
 
-Progress: **M0, M1, M2 done** · M3–M7 not started.
+Progress: **M0–M3 done** · M4–M7 not started.
 
 ### M0 — Project foundation ✅
 
@@ -418,14 +418,14 @@ Progress: **M0, M1, M2 done** · M3–M7 not started.
 | T2.3 | Treesitter Markdown highlighting when parser available | F8.R3 | T2.1 | S |
 | T2.4 | Optional `~/.config/ringmd/init.lua` sourced after bundled config | F8.R4 | T2.1 | S |
 
-### M3 — Live preview
+### M3 — Live preview ✅
 
 | Task | Description | Reqs | Deps | Size |
 |------|-------------|------|------|------|
 | T3.1 | **Model** `MarkdownRenderer`: comrak with GFM extensions + `sourcepos`; HTML sanitization; unit tests with fixture docs | F4.R1, F4.R8 | T0.1 | M |
 | T3.2 | Code block syntax highlighting (syntect, CSS classes) | F4.R5 | T3.1 | S |
 | T3.3 | **View** `PreviewView`: WebKitGTK WebView in a `GtkPaned`, base HTML shell, scripts disabled for document content | F1.R3, F4.R8 | T0.3 | M |
-| T3.4 | **ViewModel** `PreviewViewModel`: `nvim_buf_attach` → debounced re-render → `html` property; View patches `<article>` via JS, preserving scroll | F4.R2, F4.R3 | T1.1, T3.1, T3.3, T0.5 | M |
+| T3.4 | **ViewModel** `PreviewViewModel`: `nvim_buf_attach` (in the bundled Lua) → debounced text → off-thread render → `html` property; View patches `<article>` via JS, preserving scroll | F4.R2, F4.R3 | T1.1, T3.1, T3.3, T0.5 | M |
 | T3.5 | Base URI = file directory for relative images | F4.R6 | T3.3 | S |
 | T3.6 | Open links in system browser (navigation policy) | F4.R7 | T3.3 | S |
 | T3.9 | Resource policy: allow remote images, block other remote resources; test with fixture | F4.R10 | T3.3 | S |

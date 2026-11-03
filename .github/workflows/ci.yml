@@ -25,7 +25,7 @@ jobs:
       - name: Install system libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libgtk-4-dev xvfb
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev xvfb
 
       # Ubuntu 24.04 ships Neovim 0.9; RingMD needs 0.10+ (F2.R3).
       - name: Install Neovim

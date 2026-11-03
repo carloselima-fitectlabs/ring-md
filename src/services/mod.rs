@@ -3,7 +3,7 @@
 //! ViewModels depend on these traits, never on concrete GTK/WebKit types, so
 //! they can be unit-tested headless with the fakes in [`fake`]. Real
 //! implementations live in [`gtk`] as the milestones need them: clipboard
-//! (T1.9); file dialogs (T6.3) and PDF (T5.2) follow.
+//! (T1.9), links (T3.6); file dialogs (T6.3) and PDF (T5.2) follow.
 
 pub mod fake;
 pub mod gtk;
@@ -71,4 +71,10 @@ pub trait ClipboardService {
 pub trait FileDialogService {
     fn pick_open(&self) -> LocalBoxFuture<'_, Option<PathBuf>>;
     fn pick_save<'a>(&'a self, suggested_name: &'a str) -> LocalBoxFuture<'a, Option<PathBuf>>;
+}
+
+/// Opens URIs in the user's default application, e.g. links clicked in the
+/// preview go to the system browser (F4.R7).
+pub trait LinkService {
+    fn open(&self, uri: &str);
 }

@@ -5,15 +5,24 @@ use std::rc::Rc;
 use gtk::glib;
 use rmpv::Value;
 
-use super::{AppViewModel, EditorServices, EditorViewModel};
+use super::{AppViewModel, EditorServices, EditorViewModel, PreviewViewModel};
 use crate::model::nvim::{GuiCommand, NvimApi, NvimEvent, NvimSession, SpawnOptions};
 use crate::services::ClipboardService;
 
-/// Start Neovim and wire it to `app` and the returned editor. On failure
-/// the error is reported through `app` once the main loop runs (so the
-/// window is listening) and the editor stays detached (F2.R3).
+/// The ViewModels Neovim's events are routed to.
+#[derive(Debug, Clone)]
+pub struct ViewModels {
+    pub app: AppViewModel,
+    pub editor: EditorViewModel,
+    pub preview: PreviewViewModel,
+}
+
+/// Start Neovim and wire it to `app`, `preview` and the returned editor.
+/// On failure the error is reported through `app` once the main loop runs
+/// (so the window is listening) and the editor stays detached (F2.R3).
 pub fn start(
     app: &AppViewModel,
+    preview: &PreviewViewModel,
     options: &SpawnOptions,
     clipboard: Rc<dyn ClipboardService>,
 ) -> EditorViewModel {
@@ -36,22 +45,26 @@ pub fn start(
         clipboard,
     });
 
-    let (app, editor_ref) = (app.clone(), editor.clone());
+    let vms = ViewModels {
+        app: app.clone(),
+        editor: editor.clone(),
+        preview: preview.clone(),
+    };
     glib::spawn_future_local(async move {
         while let Ok(event) = events.recv().await {
-            dispatch(&app, &editor_ref, nvim.as_ref(), event);
+            dispatch(&vms, nvim.as_ref(), event);
         }
     });
     editor
 }
 
 /// Handle one event from Neovim.
-pub fn dispatch(
-    app: &AppViewModel,
-    editor: &EditorViewModel,
-    nvim: &dyn NvimApi,
-    event: NvimEvent,
-) {
+pub fn dispatch(vms: &ViewModels, nvim: &dyn NvimApi, event: NvimEvent) {
+    let ViewModels {
+        app,
+        editor,
+        preview,
+    } = vms;
     match event {
         NvimEvent::Notification { method, params } => {
             if let Some(command) = GuiCommand::from_notification(&method, &params) {
@@ -62,6 +75,12 @@ pub fn dispatch(
                 "redraw" => editor.handle_redraw(&params),
                 "ringmd_buffer" => {
                     app.apply_buffer_state(params.first().unwrap_or(&Value::Nil));
+                    preview.set_document_path(app.document().path());
+                }
+                "ringmd_text" => preview.apply_text_event(&params),
+                "ringmd_cursor" => {
+                    let line = params.first().and_then(Value::as_u64).unwrap_or(1);
+                    preview.set_cursor_line(u32::try_from(line).unwrap_or(u32::MAX));
                 }
                 "ringmd_clipboard_set" => editor.clipboard_set(&params),
                 "nvim_error_event" => tracing::warn!(?params, "neovim reported an error"),
@@ -131,15 +150,20 @@ mod tests {
     use super::*;
     use crate::model::Document;
     use crate::model::nvim::fake::{Call, FakeNvim};
-    use crate::services::fake::FakeClipboardService;
+    use crate::services::fake::{FakeClipboardService, FakeLinkService};
 
-    fn setup() -> (AppViewModel, EditorViewModel, Rc<FakeNvim>) {
+    fn setup() -> (ViewModels, Rc<FakeNvim>) {
         let nvim = Rc::new(FakeNvim::new());
         let editor = EditorViewModel::new(EditorServices {
             nvim: nvim.clone(),
             clipboard: Rc::new(FakeClipboardService::default()),
         });
-        (AppViewModel::new(Document::new()), editor, nvim)
+        let vms = ViewModels {
+            app: AppViewModel::new(Document::new()),
+            editor,
+            preview: PreviewViewModel::new(Rc::new(FakeLinkService::default())),
+        };
+        (vms, nvim)
     }
 
     fn notification(method: &str, params: Vec<Value>) -> NvimEvent {
@@ -151,14 +175,14 @@ mod tests {
 
     #[test]
     fn buffer_state_updates_title() {
-        let (app, editor, nvim) = setup();
+        let (vms, nvim) = setup();
+        let app = &vms.app;
         let state = Value::Map(vec![
             ("name".into(), "/home/me/notes.md".into()),
             ("modified".into(), true.into()),
         ]);
         dispatch(
-            &app,
-            &editor,
+            &vms,
             nvim.as_ref(),
             notification("ringmd_buffer", vec![state]),
         );
@@ -167,24 +191,19 @@ mod tests {
 
     #[test]
     fn preview_command_toggles_preview() {
-        let (app, editor, nvim) = setup();
+        let (vms, nvim) = setup();
+        let app = &vms.app;
         assert!(app.preview_visible());
-        dispatch(
-            &app,
-            &editor,
-            nvim.as_ref(),
-            notification("ringmd_preview", vec![]),
-        );
+        dispatch(&vms, nvim.as_ref(), notification("ringmd_preview", vec![]));
         assert!(!app.preview_visible());
         assert!(nvim.take_calls().is_empty());
     }
 
     #[test]
     fn unbuilt_commands_warn_in_neovim() {
-        let (app, editor, nvim) = setup();
+        let (vms, nvim) = setup();
         dispatch(
-            &app,
-            &editor,
+            &vms,
             nvim.as_ref(),
             notification("ringmd_theme", vec!["light-soft".into()]),
         );
@@ -196,11 +215,31 @@ mod tests {
     }
 
     #[test]
-    fn unknown_requests_get_an_error() {
-        let (app, editor, nvim) = setup();
+    fn preview_follows_buffer_and_cursor() {
+        let (vms, nvim) = setup();
+        let state = Value::Map(vec![
+            ("name".into(), "/home/me/notes/a.md".into()),
+            ("modified".into(), false.into()),
+        ]);
         dispatch(
-            &app,
-            &editor,
+            &vms,
+            nvim.as_ref(),
+            notification("ringmd_buffer", vec![state]),
+        );
+        assert_eq!(vms.preview.base_uri(), "file:///home/me/notes/");
+        dispatch(
+            &vms,
+            nvim.as_ref(),
+            notification("ringmd_cursor", vec![7.into()]),
+        );
+        assert_eq!(vms.preview.scroll_target_line(), 7);
+    }
+
+    #[test]
+    fn unknown_requests_get_an_error() {
+        let (vms, nvim) = setup();
+        dispatch(
+            &vms,
             nvim.as_ref(),
             NvimEvent::Request {
                 id: 3,
@@ -216,27 +255,18 @@ mod tests {
 
     #[test]
     fn exit_closes_and_crash_reports() {
-        let (app, editor, nvim) = setup();
+        let (vms, nvim) = setup();
+        let app = &vms.app;
         let closes = Rc::new(Cell::new(0));
         let errors = Rc::new(Cell::new(0));
         let (c, e) = (closes.clone(), errors.clone());
         app.connect_close_requested(move |_| c.set(c.get() + 1));
         app.connect_error_raised(move |_, _, _| e.set(e.get() + 1));
 
-        dispatch(
-            &app,
-            &editor,
-            nvim.as_ref(),
-            NvimEvent::Exited { code: Some(0) },
-        );
+        dispatch(&vms, nvim.as_ref(), NvimEvent::Exited { code: Some(0) });
         assert_eq!((closes.get(), errors.get()), (1, 0));
 
-        dispatch(
-            &app,
-            &editor,
-            nvim.as_ref(),
-            NvimEvent::Exited { code: None },
-        );
+        dispatch(&vms, nvim.as_ref(), NvimEvent::Exited { code: None });
         assert_eq!((closes.get(), errors.get()), (1, 1));
     }
 }

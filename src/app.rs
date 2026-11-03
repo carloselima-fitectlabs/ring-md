@@ -8,9 +8,9 @@ use gtk::{gdk, gio, glib};
 use crate::cli::Cli;
 use crate::model::Document;
 use crate::model::nvim::{SpawnOptions, runtime};
-use crate::services::gtk::GtkClipboardService;
+use crate::services::gtk::{GtkClipboardService, GtkLinkService};
 use crate::view::MainWindow;
-use crate::viewmodel::{AppViewModel, session};
+use crate::viewmodel::{AppViewModel, PreviewViewModel, session};
 
 /// Application ID. Provisional until the Flatpak ID is chosen (T7.2).
 pub const APP_ID: &str = "io.github.ringmd.RingMD";
@@ -35,8 +35,9 @@ pub fn run(cli: Cli) -> glib::ExitCode {
         };
         let vm = AppViewModel::new(document.clone());
         let clipboard = Rc::new(GtkClipboardService::new(&display));
-        let editor = session::start(&vm, &options, clipboard);
-        MainWindow::new(app, vm, &editor).present();
+        let preview = PreviewViewModel::new(Rc::new(GtkLinkService::default()));
+        let editor = session::start(&vm, &preview, &options, clipboard);
+        MainWindow::new(app, vm, &editor, &preview).present();
     });
 
     // Arguments were already parsed by clap; don't let GTK parse them again.

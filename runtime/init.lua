@@ -145,6 +145,80 @@ api.nvim_create_autocmd(
 )
 
 ---------------------------------------------------------------------------
+-- Live preview feed (F4.R2, F4.R4)
+---------------------------------------------------------------------------
+
+-- The current buffer's text goes to the GUI after edits settle for
+-- `g:ringmd_preview_debounce` ms (default 50), and right away when another
+-- buffer is entered. Each message carries the whole text: simple, and
+-- cheap for documents people write by hand.
+vim.g.ringmd_preview_debounce = vim.g.ringmd_preview_debounce or 50
+
+local function send_text(buf)
+  if not api.nvim_buf_is_valid(buf) or buf ~= api.nvim_get_current_buf() then
+    return
+  end
+  local lines = api.nvim_buf_get_lines(buf, 0, -1, false)
+  notify_gui('ringmd_text', {
+    buf = buf,
+    text = table.concat(lines, '\n') .. '\n',
+  })
+end
+
+local timer = vim.uv.new_timer()
+local attached = {}
+
+local function schedule_text(buf)
+  timer:stop()
+  timer:start(vim.g.ringmd_preview_debounce, 0, vim.schedule_wrap(function()
+    send_text(buf)
+  end))
+end
+
+local function attach(buf)
+  if attached[buf] then
+    return
+  end
+  attached[buf] = api.nvim_buf_attach(buf, false, {
+    on_lines = function(_, b)
+      schedule_text(b)
+    end,
+    on_reload = function(_, b)
+      schedule_text(b)
+    end,
+    on_detach = function(_, b)
+      attached[b] = nil
+    end,
+  }) or nil
+end
+
+local last_cursor_line = nil
+
+local function send_cursor(force)
+  local line = api.nvim_win_get_cursor(0)[1]
+  if force or line ~= last_cursor_line then
+    last_cursor_line = line
+    notify_gui('ringmd_cursor', line)
+  end
+end
+
+api.nvim_create_autocmd({ 'VimEnter', 'BufEnter' }, {
+  group = group,
+  callback = function(args)
+    attach(args.buf)
+    send_text(args.buf)
+    send_cursor(true)
+  end,
+})
+
+api.nvim_create_autocmd({ 'CursorMoved', 'CursorMovedI' }, {
+  group = group,
+  callback = function()
+    send_cursor(false)
+  end,
+})
+
+---------------------------------------------------------------------------
 -- User commands (F8.R2)
 ---------------------------------------------------------------------------
 
@@ -187,6 +261,9 @@ end, {
     end, THEMES)
   end,
 })
+
+-- GUI shortcuts, Normal mode only (D8); other modes keep Neovim's meaning.
+vim.keymap.set('n', '<C-p>', '<Cmd>Preview<CR>', { desc = 'Toggle the preview' })
 
 ---------------------------------------------------------------------------
 -- Your tweaks (F8.R4): ~/.config/ringmd/init.lua, after everything above.

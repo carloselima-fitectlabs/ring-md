@@ -490,3 +490,61 @@ fn commands_reach_the_gui() {
         );
     });
 }
+
+/// The `text` of a `ringmd_text` notification.
+fn preview_text(event: &NvimEvent) -> Option<String> {
+    let state = notification(event, "ringmd_text")?.first()?.as_map()?;
+    let (_, text) = state.iter().find(|(k, _)| k.as_str() == Some("text"))?;
+    Some(text.as_str()?.to_owned())
+}
+
+#[test]
+fn preview_feed_sends_text_and_cursor() {
+    let home = Home::new("preview_feed_sends_text_and_cursor");
+    let file = home.write("notes.md", "# One\n\ntwo\n");
+    let mut h = Harness::start_in(home, Some(&file));
+    block_on(async {
+        h.attach().await;
+        // Entering the buffer sends its text right away.
+        let text = h
+            .wait_for("initial text", |event, _| preview_text(event))
+            .await;
+        assert_eq!(text, "# One\n\ntwo\n");
+
+        // Edits arrive after the debounce, as one message with the result.
+        h.nvim.input("Goadded<Esc>");
+        let text = h
+            .wait_for("edited text", |event, _| {
+                preview_text(event).filter(|t| t.contains("added"))
+            })
+            .await;
+        assert_eq!(text, "# One\n\ntwo\nadded\n");
+
+        h.nvim.input("gg");
+        let line = h
+            .wait_for("cursor line 1", |event, _| {
+                notification(event, "ringmd_cursor")?
+                    .first()?
+                    .as_u64()
+                    .filter(|&l| l == 1)
+            })
+            .await;
+        assert_eq!(line, 1);
+    });
+}
+
+#[test]
+fn ctrl_p_toggles_preview_in_normal_mode_only() {
+    let mut h = Harness::start("ctrl_p_toggles_preview_in_normal_mode_only");
+    block_on(async {
+        h.attach_ready().await;
+        // In Insert mode Ctrl+P keeps Neovim's meaning (completion), so
+        // the first command seen must come from the Normal-mode press.
+        h.nvim.input("i<C-p><Esc>:Theme dark-soft<CR><C-p>");
+        assert_eq!(
+            h.next_command("first command").await,
+            GuiCommand::SetTheme(Variant::DarkSoft)
+        );
+        assert_eq!(h.next_command("Ctrl+P").await, GuiCommand::TogglePreview);
+    });
+}

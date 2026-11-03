@@ -5,7 +5,8 @@ use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
 use super::{
-    ClipboardService, FileDialogService, LocalBoxFuture, PdfOptions, PdfService, ServiceError,
+    ClipboardService, FileDialogService, LinkService, LocalBoxFuture, PdfOptions, PdfService,
+    ServiceError,
 };
 
 /// One recorded call to [`FakePdfService::export`].
@@ -84,6 +85,18 @@ impl FileDialogService for FakeFileDialogService {
             .push(suggested_name.to_owned());
         let answer = self.save_answers.borrow_mut().pop_front();
         Box::pin(async move { answer })
+    }
+}
+
+/// Records opened URIs.
+#[derive(Debug, Default)]
+pub struct FakeLinkService {
+    pub opened: RefCell<Vec<String>>,
+}
+
+impl LinkService for FakeLinkService {
+    fn open(&self, uri: &str) {
+        self.opened.borrow_mut().push(uri.to_owned());
     }
 }
 

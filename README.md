@@ -3,19 +3,19 @@
 A graphical, Linux-first Markdown editor powered by an embedded Neovim engine,
 with live preview, Gruvbox themes and PDF export.
 
-> **Status:** early development. The embedded Neovim editor and its bundled
-> config work (M0–M2); live preview (M3) is next.
+> **Status:** early development. The embedded Neovim editor, its bundled
+> config and the live preview work (M0–M3); Gruvbox themes (M4) are next.
 > See [docs/SPEC.md](docs/SPEC.md) for the specification and task breakdown.
 
 ## Building
 
-Requirements: Rust 1.92+, GTK 4.14+ development files, and
+Requirements: Rust 1.92+, GTK 4.14+ and WebKitGTK 6.0 development files, and
 [Neovim](https://neovim.io) 0.10+ on `PATH` at run time (Ubuntu 24.04's
 `neovim` package is 0.9, so use the upstream release there).
 
 ```bash
-sudo apt install libgtk-4-dev        # Debian / Ubuntu 24.04+
-sudo dnf install gtk4-devel          # Fedora
+sudo apt install libgtk-4-dev libwebkitgtk-6.0-dev   # Debian / Ubuntu 24.04+
+sudo dnf install gtk4-devel webkitgtk6.0-devel       # Fedora
 ```
 
 ```bash
@@ -28,7 +28,11 @@ Set `RINGMD_LOG=debug` for verbose logs. RingMD starts Neovim with its own
 loaded. For small tweaks, put Lua in `~/.config/ringmd/init.lua`; it runs
 after the bundled config.
 
-Inside the editor, `:Preview` toggles the preview pane. `:Theme <variant>`
+The preview pane renders the buffer as you type (CommonMark + GFM: tables,
+task lists, footnotes, highlighted code) and follows the cursor. Scripts in
+documents never run; links open in your browser; remote images load, other
+remote resources do not. Inside the editor, `:Preview` or `Ctrl+P` (Normal
+mode) toggles the preview pane. `:Theme <variant>`
 and `:ExportPdf [path]` exist and tab-complete, but only report "not
 available yet" until themes (M4) and PDF export (M5) land.
 
