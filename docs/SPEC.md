@@ -277,7 +277,7 @@ acceptance criteria (`AC`) that must be verifiable by a test or a manual check.
 | F6.R2 | PDF style is **plain and printable**: white background, black text, no Gruvbox colors, serif body font (Noto Serif → system serif), monospace code with light-grey background. |
 | F6.R3 | Default page: A4, 20 mm margins. Page size (A4/Letter) and margins configurable. |
 | F6.R4 | Headings avoid being orphaned at page bottom; code blocks, tables and images avoid splitting where possible. |
-| F6.R5 | Links remain clickable in the PDF. |
+| F6.R5 | Links remain clickable in the PDF. *(Deferred, see Q6: the link address is printed after the text instead.)* |
 | F6.R6 | Export runs without blocking editing; a notification reports success (`Exported to …`) or the error. |
 | F6.R7 | Export needs no external tools (no LaTeX, pandoc, wkhtmltopdf). |
 
@@ -383,7 +383,7 @@ pass and it has tests where testable.
 
 Legend: **S** ≈ ½ day · **M** ≈ 1–2 days · **L** ≈ 3–5 days
 
-Progress: **M0–M6 done**, M7 T7.1–T7.4 done · T7.5 (manual QA on real desktops) open. Known gap: F6.R5 (see M5).
+Progress: **M0–M6 done**, M7 T7.1–T7.4 done · T7.5 (manual QA on real desktops) open. F6.R5 deferred (Q6); Flathub out of scope for now (Q8).
 
 ### M0 — Project foundation ✅
 
@@ -447,7 +447,7 @@ Progress: **M0–M6 done**, M7 T7.1–T7.4 done · T7.5 (manual QA on real deskt
 
 ### M5 — PDF export ✅
 
-> **Known gap — F6.R5 / F6-AC3:** WebKitGTK 2.52 prints through Skia, whose PDFs carry no link annotations, so links are not clickable. The print stylesheet prints each external link's address after its text instead. `tests/pdf_export.rs::links_are_clickable` (ignored) checks this again after a WebKitGTK upgrade; alternatives are post-processing the PDF or a different PDF engine.
+> **Accepted limitation (Q6) — F6.R5 / F6-AC3:** WebKitGTK 2.52 prints through Skia, whose PDFs carry no link annotations, so links are not clickable. The print stylesheet prints each external link's address after its text instead. `tests/pdf_export.rs::links_are_clickable` (ignored) checks this again after a WebKitGTK upgrade; alternatives are post-processing the PDF or a different PDF engine.
 
 | Task | Description | Reqs | Deps | Size |
 |------|-------------|------|------|------|
@@ -474,6 +474,8 @@ Progress: **M0–M6 done**, M7 T7.1–T7.4 done · T7.5 (manual QA on real deskt
 
 ### M7 — Packaging & release (T7.1–T7.4 ✅, T7.5 open)
 
+> Local installation is the supported path (Q8): `data/install.sh PREFIX` installs, refreshes desktop caches and checks Neovim; `--uninstall` removes it.
+>
 > Files: `data/` (desktop entry, metainfo, icons, `install.sh`), `flatpak/io.github.ringmd.RingMD.yml` (GNOME 49 runtime, Neovim 0.10.4 release build with its Markdown parsers). The app ID `io.github.ringmd.RingMD` is still provisional, and the Flatpak build fetches crates over the network, so a Flathub submission needs generated cargo sources first.
 
 | Task | Description | Reqs | Deps | Size |
@@ -518,6 +520,9 @@ Fixture documents live in `tests/fixtures/` and cover every GFM feature in F4.R1
 | Q3 | License | MIT → D10 |
 | Q4 | Window chrome | Minimal headerbar → D11 |
 | Q5 | Remote images in preview | Yes, images only → D12 |
+| Q6 | Clickable PDF links (F6.R5) with WebKitGTK 2.52 / Skia | Accept the limitation: addresses are printed after link text; revisit after a WebKitGTK upgrade |
+| Q7 | WebKit sandbox in the Docker `app` container | Keep the sandbox on; Docker is for build and test, native install for daily use |
+| Q8 | Flathub | Out of scope for now; focus on local installation. The Flatpak manifest stays experimental |
 
 ---
 

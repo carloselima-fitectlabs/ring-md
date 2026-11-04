@@ -3,9 +3,9 @@
 A graphical, Linux-first Markdown editor powered by an embedded Neovim engine,
 with live preview, Gruvbox themes and PDF export.
 
-> **Status:** early development. Editor, bundled config, live preview,
-> Gruvbox themes, PDF export, files and configuration work (M0–M6);
-> packaging (M7) is next.
+> **Status:** feature-complete for v1 (M0–M7). Editor, bundled config, live
+> preview, Gruvbox themes, PDF export, files, configuration and local
+> installation work; manual QA on real desktops is in progress.
 > See [docs/SPEC.md](docs/SPEC.md) for the specification and task breakdown.
 
 ## Building
@@ -104,9 +104,20 @@ cargo build --release
 ```
 
 This installs `ringmd`, its Neovim runtime, the desktop entry (so “Open
-with RingMD” appears for `.md` files) and the icon under the prefix.
+with RingMD” appears for `.md` files) and the icon under the prefix, and
+refreshes the desktop and icon caches. It warns if `~/.local/bin` is not on
+`PATH` or if Neovim is missing or older than 0.10. Use
+`sudo ./data/install.sh /usr/local` for a system-wide install instead.
 
-As a Flatpak, which bundles Neovim and the Markdown parsers:
+To update, pull, rebuild and run the same command again. To remove it:
+
+```bash
+./data/install.sh --uninstall ~/.local
+```
+
+Your `~/.config/ringmd` (config and `init.lua`) is left in place.
+
+As a Flatpak (experimental; not published on Flathub), which bundles Neovim and the Markdown parsers:
 
 ```bash
 flatpak-builder --user --install --install-deps-from=flathub --force-clean build flatpak/io.github.ringmd.RingMD.yml
@@ -147,6 +158,11 @@ Set `RINGMD_DOCS=/path/to/notes` to open files from another folder, and
 `RINGMD_UID`/`RINGMD_GID` if your user is not uid/gid 1000. Your
 `~/.config/ringmd/init.lua` and Neovim's state persist in the
 `ringmd-home` volume.
+
+The container is mainly for building and testing. WebKit's sandbox needs
+unprivileged user namespaces, which many Docker setups block; if the
+preview stays blank or PDF export fails in the container, install RingMD
+natively as described above.
 
 ## License
 
