@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- RingMD: a ring around a Markdown "M↓", in Gruvbox colours. -->
+  <rect x="8" y="8" width="112" height="112" rx="24" fill="#282828"/>
+  <rect x="8" y="8" width="112" height="112" rx="24" fill="none" stroke="#3c3836" stroke-width="2"/>
+  <circle cx="64" cy="64" r="40" fill="none" stroke="#fe8019" stroke-width="8"/>
+  <path d="M40 80 V48 L52 62 L64 48 V80" fill="none" stroke="#ebdbb2" stroke-width="7"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M80 48 V78 M71 69 L80 79 L89 69" fill="none" stroke="#b8bb26" stroke-width="7"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,99 @@
+/* RingMD preview stylesheet. Colours come from the custom properties below;
+   the defaults are Gruvbox dark-medium, and the theme (M4) overrides them. */
+:root {
+  --bg: #282828;
+  --bg1: #3c3836;
+  --bg2: #504945;
+  --fg: #ebdbb2;
+  --fg-strong: #fbf1c7;
+  --muted: #928374;
+  --red: #fb4934;
+  --green: #b8bb26;
+  --yellow: #fabd2f;
+  --blue: #83a598;
+  --purple: #d3869b;
+  --aqua: #8ec07c;
+  --orange: #fe8019;
+  color-scheme: dark;
+}
+
+html { background: var(--bg); }
+
+body {
+  margin: 0 auto;
+  max-width: 46em;
+  padding: 1.5em 2em 4em;
+  color: var(--fg);
+  font: 16px/1.6 system-ui, sans-serif;
+  overflow-wrap: break-word;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: var(--fg-strong);
+  line-height: 1.25;
+  margin: 1.4em 0 0.6em;
+}
+h1 { font-size: 2em; border-bottom: 1px solid var(--bg2); padding-bottom: 0.2em; }
+h2 { font-size: 1.5em; border-bottom: 1px solid var(--bg1); padding-bottom: 0.2em; }
+h3 { font-size: 1.25em; }
+h4, h5, h6 { font-size: 1em; }
+article > :first-child { margin-top: 0; }
+
+a { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+p, ul, ol, blockquote, pre, table { margin: 0 0 1em; }
+ul, ol { padding-left: 2em; }
+li > p { margin: 0; }
+.contains-task-list { list-style: none; padding-left: 1.2em; }
+.task-list-item-checkbox { margin: 0 0.4em 0 -1.2em; vertical-align: middle; }
+
+blockquote {
+  margin-left: 0;
+  padding: 0 1em;
+  color: var(--muted);
+  border-left: 0.25em solid var(--bg2);
+}
+
+hr { border: 0; border-top: 1px solid var(--bg2); margin: 2em 0; }
+img { max-width: 100%; }
+del { color: var(--muted); }
+
+code, pre {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
+}
+:not(pre) > code {
+  background: var(--bg1);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+pre {
+  background: var(--bg1);
+  border-radius: 6px;
+  padding: 0.8em 1em;
+  overflow-x: auto;
+  line-height: 1.45;
+}
+
+table { border-collapse: collapse; display: block; overflow-x: auto; }
+th, td { border: 1px solid var(--bg2); padding: 0.35em 0.8em; }
+th { background: var(--bg1); color: var(--fg-strong); }
+
+.footnotes { font-size: 0.9em; color: var(--muted); border-top: 1px solid var(--bg1); }
+.footnote-ref a, .footnote-backref { color: var(--aqua); }
+
+/* Code highlighting: syntect scope classes, prefixed with `hl-`. */
+.hl-comment { color: var(--muted); font-style: italic; }
+.hl-string { color: var(--green); }
+.hl-constant { color: var(--purple); }
+.hl-keyword, .hl-storage { color: var(--red); }
+.hl-entity.hl-name.hl-function, .hl-support.hl-function { color: var(--green); }
+.hl-entity.hl-name.hl-type, .hl-entity.hl-name.hl-class,
+.hl-support.hl-type, .hl-support.hl-class { color: var(--yellow); }
+.hl-entity.hl-name.hl-tag { color: var(--aqua); }
+.hl-entity.hl-other.hl-attribute-name { color: var(--yellow); }
+.hl-variable.hl-parameter { color: var(--blue); }
+.hl-punctuation.hl-definition.hl-string { color: var(--green); }
+.hl-invalid { color: var(--red); text-decoration: underline wavy; }
+.hl-markup.hl-heading { color: var(--orange); font-weight: bold; }

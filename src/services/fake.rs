@@ -5,13 +5,16 @@ use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
 use super::{
-    ClipboardService, FileDialogService, LocalBoxFuture, PdfOptions, PdfService, ServiceError,
+    ClipboardService, FileDialogService, LinkService, LocalBoxFuture, PdfOptions, PdfService,
+    ServiceError, SettingsStore,
 };
+use crate::model::config::Setting;
 
 /// One recorded call to [`FakePdfService::export`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct PdfExportCall {
     pub html: String,
+    pub base_uri: Option<String>,
     pub options: PdfOptions,
     pub output: PathBuf,
 }
@@ -34,11 +37,13 @@ impl PdfService for FakePdfService {
     fn export<'a>(
         &'a self,
         html: &'a str,
+        base_uri: Option<&'a str>,
         options: &'a PdfOptions,
         output: &'a Path,
     ) -> LocalBoxFuture<'a, Result<(), ServiceError>> {
         self.calls.borrow_mut().push(PdfExportCall {
             html: html.to_owned(),
+            base_uri: base_uri.map(Into::into),
             options: options.clone(),
             output: output.to_owned(),
         });
@@ -87,6 +92,30 @@ impl FileDialogService for FakeFileDialogService {
     }
 }
 
+/// Records opened URIs.
+#[derive(Debug, Default)]
+pub struct FakeLinkService {
+    pub opened: RefCell<Vec<String>>,
+}
+
+impl LinkService for FakeLinkService {
+    fn open(&self, uri: &str) {
+        self.opened.borrow_mut().push(uri.to_owned());
+    }
+}
+
+/// Records saved settings.
+#[derive(Debug, Default)]
+pub struct FakeSettingsStore {
+    pub saved: RefCell<Vec<Setting>>,
+}
+
+impl SettingsStore for FakeSettingsStore {
+    fn save(&self, setting: &Setting) {
+        self.saved.borrow_mut().push(setting.clone());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,13 +131,13 @@ mod tests {
         let pdf = FakePdfService::default();
         let options = PdfOptions::default();
         assert_eq!(
-            block_on(pdf.export("<p>x</p>", &options, Path::new("a.pdf"))),
+            block_on(pdf.export("<p>x</p>", None, &options, Path::new("a.pdf"))),
             Ok(())
         );
 
         pdf.fail_next(ServiceError::Io("disk full".into()));
         assert_eq!(
-            block_on(pdf.export("<p>y</p>", &options, Path::new("b.pdf"))),
+            block_on(pdf.export("<p>y</p>", None, &options, Path::new("b.pdf"))),
             Err(ServiceError::Io("disk full".into()))
         );
         assert_eq!(pdf.calls.borrow().len(), 2);

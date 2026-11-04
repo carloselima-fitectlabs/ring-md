@@ -1,0 +1,70 @@
+# RingMD with Docker Compose.
+#
+#   docker compose run --rm check          # fmt + clippy + tests (like CI)
+#   docker compose run --rm dev            # shell with the toolchain
+#   docker compose run --rm app notes.md   # the GUI, on your X11 display
+#
+# The GUI uses the host's X server (XWayland works on Wayland desktops).
+# Allow local containers first:  xhost +si:localuser:$(id -un)
+# Files are opened from RINGMD_DOCS (default: this directory), mounted at /work.
+
+x-dev: &dev
+  build:
+    context: .
+    target: dev
+  image: ringmd:dev
+  # Run as the host user so files created in the mounted source tree are
+  # yours. Override in .env if your IDs are not 1000.
+  user: "${RINGMD_UID:-1000}:${RINGMD_GID:-1000}"
+  environment:
+    HOME: /tmp/home
+  volumes:
+    - .:/src
+    - cargo-registry:/usr/local/cargo/registry
+    - cargo-git:/usr/local/cargo/git
+    - target:/target
+  working_dir: /src
+
+services:
+  app:
+    build:
+      context: .
+      target: runtime
+    image: ringmd:latest
+    user: "${RINGMD_UID:-1000}:${RINGMD_GID:-1000}"
+    environment:
+      DISPLAY: ${DISPLAY:-:0}
+      GDK_BACKEND: x11
+      HOME: /home/ubuntu
+      RINGMD_LOG: ${RINGMD_LOG:-info}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      - ${RINGMD_DOCS:-.}:/work
+      # Keeps ~/.config/ringmd (your init.lua) and Neovim's state between runs.
+      - ringmd-home:/home/ubuntu
+    # Neovim may need a moment to write files on exit.
+    stop_grace_period: 5s
+
+  check:
+    <<: *dev
+    profiles: [tools]
+    command:
+      - bash
+      - -euc
+      - |
+        cargo fmt --all --check
+        cargo clippy --all-targets --locked -- -D warnings
+        cargo test --all-targets --locked
+
+  dev:
+    <<: *dev
+    profiles: [tools]
+    stdin_open: true
+    tty: true
+    command: bash
+
+volumes:
+  cargo-registry:
+  cargo-git:
+  target:
+  ringmd-home:

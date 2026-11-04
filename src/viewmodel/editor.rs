@@ -82,6 +82,8 @@ mod imp {
         pub(super) area: Cell<(f64, f64)>,
         /// Button held during a drag, and the last cell reported.
         pub(super) drag: Cell<Option<(MouseButton, u32, u32)>>,
+        /// Size `Ctrl+0` returns to (from the config).
+        pub(super) default_font_size: Cell<u32>,
     }
 
     impl Default for EditorViewModel {
@@ -89,6 +91,7 @@ mod imp {
             Self {
                 font_family: RefCell::new(DEFAULT_FONT_FAMILY.into()),
                 font_size: Cell::new(DEFAULT_FONT_SIZE),
+                default_font_size: Cell::new(DEFAULT_FONT_SIZE),
                 cols: Cell::new(INITIAL_COLS),
                 rows: Cell::new(INITIAL_ROWS),
                 mode: RefCell::new("normal".into()),
@@ -353,9 +356,37 @@ impl EditorViewModel {
         self.set_font_size(self.font_size().saturating_sub(1));
     }
 
-    /// Command: `Ctrl+0`.
+    /// Command: `Ctrl+0`: back to the configured size.
     pub fn zoom_reset(&self) {
-        self.set_font_size(DEFAULT_FONT_SIZE);
+        self.set_font_size(self.imp().default_font_size.get());
+    }
+
+    /// Apply the configured font (F9.R2): family and default size.
+    pub fn configure_font(&self, family: &str, size: u32) {
+        let imp = self.imp();
+        let size = size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
+        imp.default_font_size.set(size);
+        let family_changed = *imp.font_family.borrow() != family;
+        if family_changed {
+            imp.font_family.replace(family.to_owned());
+        }
+        if imp.font_size.replace(size) != size {
+            self.notify_font_size();
+            self.notify_font();
+        } else if family_changed {
+            self.notify_font();
+        }
+    }
+
+    /// Command: the window gained or lost focus. Neovim then fires
+    /// `FocusGained`/`FocusLost`, which re-checks files changed on disk
+    /// (F7.R3).
+    pub fn focus_changed(&self, focused: bool) {
+        if self.imp().attached.get()
+            && let Some(nvim) = self.nvim()
+        {
+            nvim.notify("nvim_ui_set_focus", vec![focused.into()]);
+        }
     }
 
     /// Neovim copied to `"+` or `"*` (T1.9).
@@ -464,6 +495,16 @@ mod tests {
         assert_eq!(vm.font_size(), DEFAULT_FONT_SIZE);
         assert_eq!(notified.get(), 4);
         assert!(nvim.take_calls().is_empty());
+    }
+
+    #[test]
+    fn configured_font_is_the_reset_target() {
+        let (vm, _, _) = editor();
+        vm.configure_font("Iosevka", 15);
+        assert_eq!(vm.font(), "Iosevka 15");
+        vm.zoom_in();
+        vm.zoom_reset();
+        assert_eq!(vm.font_size(), 15);
     }
 
     #[test]

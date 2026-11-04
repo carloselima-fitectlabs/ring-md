@@ -25,7 +25,7 @@ jobs:
       - name: Install system libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libgtk-4-dev xvfb
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev xvfb poppler-utils
 
       # Ubuntu 24.04 ships Neovim 0.9; RingMD needs 0.10+ (F2.R3).
       - name: Install Neovim
@@ -51,8 +51,9 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets --locked -- -D warnings
 
+      # Under Xvfb so the PDF golden test (WebKit) runs instead of skipping.
       - name: Test
-        run: cargo test --all-targets --locked
+        run: xvfb-run -a cargo test --all-targets --locked
 
       - name: Smoke test (app starts under Xvfb)
         run: |
@@ -66,3 +67,40 @@ jobs:
             fi
             kill "$pid"
           '
+
+  docker:
+    name: docker image
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build runtime image
+        run: docker build --target runtime -t ringmd:ci .
+
+      - name: Image contains the app and Neovim
+        run: |
+          docker run --rm --entrypoint sh ringmd:ci -c \
+            'test -x /usr/local/bin/ringmd \
+             && test -f /usr/local/share/ringmd/runtime/init.lua \
+             && nvim --version | head -1'
+
+  flatpak:
+    name: flatpak bundle
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-49
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate desktop file and metainfo
+        run: |
+          desktop-file-validate data/io.github.ringmd.RingMD.desktop
+          appstreamcli validate --no-net data/io.github.ringmd.RingMD.metainfo.xml
+
+      - name: Build the Flatpak bundle
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: ringmd.flatpak
+          manifest-path: flatpak/io.github.ringmd.RingMD.yml
+          cache-key: flatpak-builder-${{ hashFiles('flatpak/*.yml', 'Cargo.lock') }}

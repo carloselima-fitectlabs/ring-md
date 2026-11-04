@@ -2,6 +2,7 @@
 //! error reporting.
 
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use gtk::glib;
 use gtk::glib::prelude::*;
@@ -10,6 +11,8 @@ use gtk::glib::subclass::prelude::*;
 use rmpv::Value;
 
 use crate::model::Document;
+use crate::model::nvim::NvimApi;
+use crate::services::FileDialogService;
 
 /// Name of the signal emitted by [`AppViewModel::report_error`].
 pub const SIGNAL_ERROR_RAISED: &str = "error-raised";
@@ -17,7 +20,11 @@ pub const SIGNAL_ERROR_RAISED: &str = "error-raised";
 /// Name of the signal asking the View to close the window.
 pub const SIGNAL_CLOSE_REQUESTED: &str = "close-requested";
 
-mod imp {
+/// Name of the signal asking the View to confirm closing with unsaved
+/// changes (F1.R5). Its argument lists the unsaved files.
+pub const SIGNAL_CONFIRM_CLOSE: &str = "confirm-close";
+
+pub(super) mod imp {
     use std::cell::{Cell, RefCell};
     use std::sync::OnceLock;
 
@@ -25,7 +32,7 @@ mod imp {
 
     use super::*;
 
-    #[derive(Debug, glib::Properties)]
+    #[derive(glib::Properties)]
     #[properties(wrapper_type = super::AppViewModel)]
     pub struct AppViewModel {
         /// `<filename>[+] — RingMD` (F1.R4).
@@ -43,6 +50,11 @@ mod imp {
         /// Whether the window is fullscreen (§5, F11).
         #[property(get, set = Self::set_fullscreen, explicit_notify)]
         fullscreen: Cell<bool>,
+
+        pub(in crate::viewmodel) nvim: RefCell<Option<Rc<dyn NvimApi>>>,
+        pub(in crate::viewmodel) dialogs: RefCell<Option<Rc<dyn FileDialogService>>>,
+        /// Set once Neovim has exited, so the window may close.
+        pub(in crate::viewmodel) neovim_gone: Cell<bool>,
     }
 
     impl Default for AppViewModel {
@@ -51,7 +63,20 @@ mod imp {
                 document: RefCell::default(),
                 preview_visible: Cell::new(true),
                 fullscreen: Cell::new(false),
+                nvim: RefCell::default(),
+                dialogs: RefCell::default(),
+                neovim_gone: Cell::new(false),
             }
+        }
+    }
+
+    impl std::fmt::Debug for AppViewModel {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("AppViewModel")
+                .field("document", &self.document.borrow())
+                .field("preview_visible", &self.preview_visible.get())
+                .field("fullscreen", &self.fullscreen.get())
+                .finish_non_exhaustive()
         }
     }
 
@@ -100,6 +125,9 @@ mod imp {
                         .param_types([String::static_type(), String::static_type()])
                         .build(),
                     Signal::builder(SIGNAL_CLOSE_REQUESTED).build(),
+                    Signal::builder(SIGNAL_CONFIRM_CLOSE)
+                        .param_types([String::static_type()])
+                        .build(),
                 ]
             })
         }
@@ -172,6 +200,7 @@ impl AppViewModel {
     /// Neovim ended (F2.R7): a clean exit (`:q`) closes the window, anything
     /// else is reported as a crash.
     pub fn neovim_exited(&self, code: Option<i32>) {
+        self.imp().neovim_gone.set(true);
         match code {
             Some(0) => self.emit_by_name::<()>(SIGNAL_CLOSE_REQUESTED, &[]),
             Some(code) => self.report_error(

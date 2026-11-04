@@ -1,0 +1,62 @@
+# Flatpak manifest (T7.2, F10.R1). Build a bundle with:
+#
+#   flatpak-builder --user --install-deps-from=flathub --force-clean \
+#     --repo=repo build flatpak/io.github.ringmd.RingMD.yml
+#   flatpak build-bundle repo ringmd.flatpak io.github.ringmd.RingMD
+#
+# The app ID is provisional until the final one is chosen.
+id: io.github.ringmd.RingMD
+runtime: org.gnome.Platform
+runtime-version: '49'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: ringmd
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # Remote images in the preview (F4.R10); nothing else uses the network.
+  - --share=network
+  # Neovim opens any path the user types (`:e`, `:w`).
+  - --filesystem=home
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+modules:
+  # Neovim 0.10 release build; it ships the Treesitter Markdown parsers
+  # (lib/nvim/parser/markdown*.so) that F8.R3 uses.
+  - name: neovim
+    buildsystem: simple
+    build-commands:
+      - cp -a bin lib share /app/
+    sources:
+      - type: archive
+        only-arches: [x86_64]
+        url: https://github.com/neovim/neovim/releases/download/v0.10.4/nvim-linux-x86_64.tar.gz
+        sha256: 95aaa8e89473f5421114f2787c13ae0ec6e11ebbd1a13a1bd6fcf63420f8073f
+      - type: archive
+        only-arches: [aarch64]
+        url: https://github.com/neovim/neovim/releases/download/v0.10.4/nvim-linux-arm64.tar.gz
+        sha256: c819bf47a9878013ba35ceae87125dd170ede4a72844d049fb35f781045872eb
+
+  - name: ringmd
+    buildsystem: simple
+    build-options:
+      env:
+        CARGO_HOME: /run/build/ringmd/cargo
+      # Cargo downloads the crates while building. Flathub needs offline
+      # sources instead (flatpak-cargo-generator's cargo-sources.json).
+      build-args:
+        - --share=network
+    build-commands:
+      - cargo build --release --locked
+      - ./data/install.sh /app target/release/ringmd
+    sources:
+      - type: dir
+        path: ..
+        skip:
+          - target
+          - .flatpak-builder
+          - build
+          - repo

@@ -158,13 +158,15 @@ src/
   app.rs      GTK application lifecycle
   cli.rs      `ringmd [FILE]`
   logging.rs  `RINGMD_LOG` tracing setup
-  model/      document.rs grid.rs clipboard.rs theme.rs nvim/ · render.rs pdf.rs config.rs
+  model/      document.rs grid.rs clipboard.rs config.rs theme.rs render.rs preview.css pdf.css nvim/
     nvim/     session.rs (process + RPC) rpc.rs redraw.rs input.rs command.rs version.rs runtime.rs fake.rs
-  viewmodel/  app.rs editor.rs session.rs (event routing) · preview.rs theme.rs export.rs
-  view/       window.rs dialogs.rs grid_view.rs · preview_view.rs
-  services/   traits (PDF, clipboard, file dialogs) + gtk.rs (real) + fake.rs for tests
+  viewmodel/  app.rs editor.rs preview.rs theme.rs export.rs session.rs (event routing)
+  view/       window.rs dialogs.rs grid_view.rs preview_view.rs
+  services/   traits (PDF, clipboard, file dialogs, links, settings) + gtk.rs webkit.rs (real) + fake.rs for tests
 runtime/      init.lua
-tests/        architecture.rs (layering rules) nvim_session.rs (real nvim) · fixtures/
+data/         desktop entry, metainfo, icons, install.sh
+flatpak/      Flatpak manifest
+tests/        architecture.rs (layering rules) nvim_session.rs (real nvim) pdf_export.rs (golden PDF) fixtures/
 ```
 
 Modules after `·` are planned for later milestones. `tests/architecture.rs`
@@ -275,7 +277,7 @@ acceptance criteria (`AC`) that must be verifiable by a test or a manual check.
 | F6.R2 | PDF style is **plain and printable**: white background, black text, no Gruvbox colors, serif body font (Noto Serif → system serif), monospace code with light-grey background. |
 | F6.R3 | Default page: A4, 20 mm margins. Page size (A4/Letter) and margins configurable. |
 | F6.R4 | Headings avoid being orphaned at page bottom; code blocks, tables and images avoid splitting where possible. |
-| F6.R5 | Links remain clickable in the PDF. |
+| F6.R5 | Links remain clickable in the PDF. *(Deferred, see Q6: the link address is printed after the text instead.)* |
 | F6.R6 | Export runs without blocking editing; a notification reports success (`Exported to …`) or the error. |
 | F6.R7 | Export needs no external tools (no LaTeX, pandoc, wkhtmltopdf). |
 
@@ -381,7 +383,7 @@ pass and it has tests where testable.
 
 Legend: **S** ≈ ½ day · **M** ≈ 1–2 days · **L** ≈ 3–5 days
 
-Progress: **M0, M1, M2 done** · M3–M7 not started.
+Progress: **M0–M6 done**, M7 T7.1–T7.4 done · T7.5 (manual QA on real desktops) open. F6.R5 deferred (Q6); Flathub out of scope for now (Q8).
 
 ### M0 — Project foundation ✅
 
@@ -418,21 +420,21 @@ Progress: **M0, M1, M2 done** · M3–M7 not started.
 | T2.3 | Treesitter Markdown highlighting when parser available | F8.R3 | T2.1 | S |
 | T2.4 | Optional `~/.config/ringmd/init.lua` sourced after bundled config | F8.R4 | T2.1 | S |
 
-### M3 — Live preview
+### M3 — Live preview ✅
 
 | Task | Description | Reqs | Deps | Size |
 |------|-------------|------|------|------|
 | T3.1 | **Model** `MarkdownRenderer`: comrak with GFM extensions + `sourcepos`; HTML sanitization; unit tests with fixture docs | F4.R1, F4.R8 | T0.1 | M |
 | T3.2 | Code block syntax highlighting (syntect, CSS classes) | F4.R5 | T3.1 | S |
 | T3.3 | **View** `PreviewView`: WebKitGTK WebView in a `GtkPaned`, base HTML shell, scripts disabled for document content | F1.R3, F4.R8 | T0.3 | M |
-| T3.4 | **ViewModel** `PreviewViewModel`: `nvim_buf_attach` → debounced re-render → `html` property; View patches `<article>` via JS, preserving scroll | F4.R2, F4.R3 | T1.1, T3.1, T3.3, T0.5 | M |
+| T3.4 | **ViewModel** `PreviewViewModel`: `nvim_buf_attach` (in the bundled Lua) → debounced text → off-thread render → `html` property; View patches `<article>` via JS, preserving scroll | F4.R2, F4.R3 | T1.1, T3.1, T3.3, T0.5 | M |
 | T3.5 | Base URI = file directory for relative images | F4.R6 | T3.3 | S |
 | T3.6 | Open links in system browser (navigation policy) | F4.R7 | T3.3 | S |
 | T3.9 | Resource policy: allow remote images, block other remote resources; test with fixture | F4.R10 | T3.3 | S |
 | T3.7 | Scroll sync: `CursorMoved` → `PreviewViewModel.scroll_target_line` → View scrolls to nearest `data-sourcepos` element | F4.R4 | T3.4 | M |
 | T3.8 | `AppViewModel.preview_visible` + `toggle_preview` command, bound to `:Preview` and `Ctrl+P` | F4.R9 | T2.2, T3.3 | S |
 
-### M4 — Gruvbox theme & variants
+### M4 — Gruvbox theme & variants ✅
 
 | Task | Description | Reqs | Deps | Size |
 |------|-------------|------|------|------|
@@ -443,7 +445,9 @@ Progress: **M0, M1, M2 done** · M3–M7 not started.
 | T4.5 | **ViewModel** `ThemeViewModel`: `variant` property, `set_variant` command; `:Theme <variant>` live switch + persistence | F5.R4 | T2.2, T4.2–T4.4, T6.1 | S |
 | T4.6 | `theme = "system"` following desktop color scheme | F5.R5 | T4.5 | S |
 
-### M5 — PDF export
+### M5 — PDF export ✅
+
+> **Accepted limitation (Q6) — F6.R5 / F6-AC3:** WebKitGTK 2.52 prints through Skia, whose PDFs carry no link annotations, so links are not clickable. The print stylesheet prints each external link's address after its text instead. `tests/pdf_export.rs::links_are_clickable` (ignored) checks this again after a WebKitGTK upgrade; alternatives are post-processing the PDF or a different PDF engine.
 
 | Task | Description | Reqs | Deps | Size |
 |------|-------------|------|------|------|
@@ -453,11 +457,13 @@ Progress: **M0, M1, M2 done** · M3–M7 not started.
 | T5.4 | **ViewModel** `ExportViewModel`: async export, `is_exporting` + result properties; View shows toast | F6.R6 | T5.3 | S |
 | T5.5 | Golden test: export fixture doc, assert valid PDF, page count, white background, link annotations | F6-AC1–AC3 | T5.2 | M |
 
-### M6 — Files & configuration
+### M6 — Files & configuration ✅
+
+> T6.6 is met by making the GUI shortcuts Neovim mappings in the bundled config (`nmap` for `Ctrl+O/E/P`, all modes for `Ctrl+S`/`F11`), so the mode decides and nothing is intercepted in the View. `Ctrl+=/-/0` stay GUI-side in `EditorViewModel`.
 
 | Task | Description | Reqs | Deps | Size |
 |------|-------------|------|------|------|
-| T6.1 | **Model** `Config`: TOML load/save, defaults, validation with warnings | F9.R1–R4 | T0.1 | S |
+| T6.1 ✅ | **Model** `Config`: TOML load/save, defaults, validation with warnings (done with M4, for `:Theme` persistence; other keys are wired in M6) | F9.R1–R4 | T0.1 | S |
 | T6.2 | Unsaved-changes flow in `AppViewModel`; View shows the dialog | F1.R5 | T1.8 | S |
 | T6.3 | `Ctrl+O` open / `Ctrl+S` save & Save As choosers | F7.R2 | T1.1 | S |
 | T6.4 | Drag-and-drop file open | F7.R4 | T1.1 | S |
@@ -466,7 +472,11 @@ Progress: **M0, M1, M2 done** · M3–M7 not started.
 | T6.7 | Fullscreen (`F11`) | §5 | T0.3 | S |
 | T6.8 | **View** minimal headerbar bound to `AppViewModel` (title, preview toggle, menu) | F1.R7 | T0.5, T3.8 | S |
 
-### M7 — Packaging & release
+### M7 — Packaging & release (T7.1–T7.4 ✅, T7.5 open)
+
+> Local installation is the supported path (Q8): `data/install.sh PREFIX` installs, refreshes desktop caches and checks Neovim; `--uninstall` removes it.
+>
+> Files: `data/` (desktop entry, metainfo, icons, `install.sh`), `flatpak/io.github.ringmd.RingMD.yml` (GNOME 49 runtime, Neovim 0.10.4 release build with its Markdown parsers). The app ID `io.github.ringmd.RingMD` is still provisional, and the Flatpak build fetches crates over the network, so a Flathub submission needs generated cargo sources first.
 
 | Task | Description | Reqs | Deps | Size |
 |------|-------------|------|------|------|
@@ -510,6 +520,9 @@ Fixture documents live in `tests/fixtures/` and cover every GFM feature in F4.R1
 | Q3 | License | MIT → D10 |
 | Q4 | Window chrome | Minimal headerbar → D11 |
 | Q5 | Remote images in preview | Yes, images only → D12 |
+| Q6 | Clickable PDF links (F6.R5) with WebKitGTK 2.52 / Skia | Accept the limitation: addresses are printed after link text; revisit after a WebKitGTK upgrade |
+| Q7 | WebKit sandbox in the Docker `app` container | Keep the sandbox on; Docker is for build and test, native install for daily use |
+| Q8 | Flathub | Out of scope for now; focus on local installation. The Flatpak manifest stays experimental |
 
 ---
 

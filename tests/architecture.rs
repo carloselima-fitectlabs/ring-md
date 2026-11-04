@@ -58,6 +58,7 @@ const GTK_UI: &[&str] = &[
     "gtk::cairo",
     "gtk::{",
     "use gtk;",
+    "webkit6",
 ];
 
 #[test]

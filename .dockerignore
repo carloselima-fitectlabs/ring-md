@@ -1,0 +1,6 @@
+/target
+/.git
+/.nvimlog
+/docker-compose.yml
+/Dockerfile
+/.dockerignore

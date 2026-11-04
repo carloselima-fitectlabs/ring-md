@@ -144,11 +144,94 @@ api.nvim_create_autocmd(
   { group = group, callback = report_buffer }
 )
 
+-- Startup is done (your init.lua included): the GUI applies the theme now.
+api.nvim_create_autocmd('VimEnter', {
+  group = group,
+  callback = function()
+    notify_gui('ringmd_ready')
+  end,
+})
+
+---------------------------------------------------------------------------
+-- Live preview feed (F4.R2, F4.R4)
+---------------------------------------------------------------------------
+
+-- The current buffer's text goes to the GUI after edits settle for
+-- `g:ringmd_preview_debounce` ms (default 50), and right away when another
+-- buffer is entered. Each message carries the whole text: simple, and
+-- cheap for documents people write by hand.
+vim.g.ringmd_preview_debounce = vim.g.ringmd_preview_debounce or 50
+
+local function send_text(buf)
+  if not api.nvim_buf_is_valid(buf) or buf ~= api.nvim_get_current_buf() then
+    return
+  end
+  local lines = api.nvim_buf_get_lines(buf, 0, -1, false)
+  notify_gui('ringmd_text', {
+    buf = buf,
+    text = table.concat(lines, '\n') .. '\n',
+  })
+end
+
+local timer = vim.uv.new_timer()
+local attached = {}
+
+local function schedule_text(buf)
+  timer:stop()
+  timer:start(vim.g.ringmd_preview_debounce, 0, vim.schedule_wrap(function()
+    send_text(buf)
+  end))
+end
+
+local function attach(buf)
+  if attached[buf] then
+    return
+  end
+  attached[buf] = api.nvim_buf_attach(buf, false, {
+    on_lines = function(_, b)
+      schedule_text(b)
+    end,
+    on_reload = function(_, b)
+      schedule_text(b)
+    end,
+    on_detach = function(_, b)
+      attached[b] = nil
+    end,
+  }) or nil
+end
+
+local last_cursor_line = nil
+
+local function send_cursor(force)
+  local line = api.nvim_win_get_cursor(0)[1]
+  if force or line ~= last_cursor_line then
+    last_cursor_line = line
+    notify_gui('ringmd_cursor', line)
+  end
+end
+
+api.nvim_create_autocmd({ 'VimEnter', 'BufEnter' }, {
+  group = group,
+  callback = function(args)
+    attach(args.buf)
+    send_text(args.buf)
+    send_cursor(true)
+  end,
+})
+
+api.nvim_create_autocmd({ 'CursorMoved', 'CursorMovedI' }, {
+  group = group,
+  callback = function()
+    send_cursor(false)
+  end,
+})
+
 ---------------------------------------------------------------------------
 -- User commands (F8.R2)
 ---------------------------------------------------------------------------
 
--- Gruvbox variants (F5.R1). Must match `model::theme::Variant`.
+-- Gruvbox variants (F5.R1) and `system` (follow the desktop, F5.R5).
+-- Must match `model::theme::ThemeChoice::names()`.
 local THEMES = {
   'dark-hard',
   'dark-medium',
@@ -156,6 +239,9 @@ local THEMES = {
   'light-hard',
   'light-medium',
   'light-soft',
+  'system',
+  'system-hard',
+  'system-soft',
 }
 
 api.nvim_create_user_command('Preview', function()
@@ -185,6 +271,81 @@ end, {
     return vim.tbl_filter(function(name)
       return vim.startswith(name, lead)
     end, THEMES)
+  end,
+})
+
+---------------------------------------------------------------------------
+-- Files (F7) and GUI shortcuts (§5)
+---------------------------------------------------------------------------
+
+-- Helpers the GUI calls with nvim_exec_lua.
+_G.ringmd = {}
+
+-- Modified listed buffers: { {buf = n, name = 'notes.md' or ''}, ... }.
+function ringmd.unsaved()
+  local out = {}
+  for _, buf in ipairs(api.nvim_list_bufs()) do
+    if vim.bo[buf].buflisted and vim.bo[buf].modified then
+      table.insert(out, { buf = buf, name = api.nvim_buf_get_name(buf) })
+    end
+  end
+  return out
+end
+
+-- Write `buf`, to `path` if given (Save As; the GUI already asked about
+-- overwriting). Returns an error message, or nil.
+function ringmd.save(buf, path)
+  local ok, err = pcall(api.nvim_buf_call, buf, function()
+    if path then
+      vim.cmd('saveas! ' .. vim.fn.fnameescape(path))
+    else
+      vim.cmd('write')
+    end
+  end)
+  return not ok and tostring(err) or nil
+end
+
+-- Open `path` in the current window.
+function ringmd.open(path)
+  local ok, err = pcall(vim.cmd, 'edit ' .. vim.fn.fnameescape(path))
+  return not ok and tostring(err) or nil
+end
+
+-- Ctrl+S: write, or ask the GUI for a name when the buffer has none.
+local function save_current()
+  if api.nvim_buf_get_name(0) == '' then
+    notify_gui('ringmd_save_as')
+  else
+    local err = ringmd.save(0)
+    if err then
+      api.nvim_err_writeln(err)
+    end
+  end
+end
+
+-- Normal mode only (D8): other modes keep Neovim's meaning.
+vim.keymap.set('n', '<C-p>', '<Cmd>Preview<CR>', { desc = 'Toggle the preview' })
+vim.keymap.set('n', '<C-e>', '<Cmd>ExportPdf<CR>', { desc = 'Export to PDF' })
+vim.keymap.set('n', '<C-o>', function()
+  notify_gui('ringmd_open')
+end, { desc = 'Open a file' })
+-- Every mode (§5).
+local all_modes = { 'n', 'i', 'v', 's', 'x', 'o', 'c', 't' }
+vim.keymap.set(all_modes, '<C-s>', save_current, { desc = 'Save' })
+vim.keymap.set(all_modes, '<F11>', function()
+  notify_gui('ringmd_fullscreen')
+end, { desc = 'Toggle fullscreen' })
+
+-- Files changed on disk (F7.R3): check when RingMD regains focus or a
+-- buffer is entered; 'autoread' reloads unmodified buffers and Neovim
+-- asks about modified ones as usual.
+vim.opt.autoread = true
+api.nvim_create_autocmd({ 'FocusGained', 'BufEnter' }, {
+  group = group,
+  callback = function()
+    if vim.fn.getcmdwintype() == '' and api.nvim_get_mode().mode ~= 'c' then
+      vim.cmd('silent! checktime')
+    end
   end,
 })
 
